@@ -13,12 +13,16 @@ var _pop_label: Label
 var _tech_list: VBoxContainer
 var _building_list: VBoxContainer
 var _upgrade_list: VBoxContainer
+var _craft_list: VBoxContainer
 var _log_label: Label
 var _confirm_wipe: ConfirmationDialog
 
 var _resource_rows: Dictionary = {}
 var _job_rows: Dictionary = {}
 var _shop_buttons: Array = []
+var _shop_signature := ""
+var _commission_buttons: Array = []
+var _craft_bars: Array = []
 var _log: PackedStringArray = []
 var _refresh_timer := 0.0
 
@@ -84,6 +88,7 @@ func _build_layout() -> void:
 	_tech_list = _make_tab(tabs, "Discoveries")
 	_building_list = _make_tab(tabs, "Buildings")
 	_upgrade_list = _make_tab(tabs, "Upgrades")
+	_craft_list = _make_tab(tabs, "Crafting")
 
 	var bottom := HBoxContainer.new()
 	root.add_child(bottom)
@@ -165,6 +170,7 @@ func _rebuild_lists() -> void:
 	_rebuild_resources()
 	_rebuild_jobs()
 	_rebuild_shop()
+	_rebuild_crafting()
 	_refresh()
 
 
@@ -240,7 +246,19 @@ func _step() -> int:
 	return 10 if Input.is_key_pressed(KEY_SHIFT) else 1
 
 
+func _available_signature() -> String:
+	var ids: PackedStringArray = []
+	for t in GameData.TECHS:
+		if Game.tech_available(t):
+			ids.append(t["id"])
+	for u in GameData.UPGRADES:
+		if Game.upgrade_available(u):
+			ids.append(u["id"])
+	return ",".join(ids)
+
+
 func _rebuild_shop() -> void:
+	_shop_signature = _available_signature()
 	for list in [_tech_list, _building_list, _upgrade_list]:
 		_clear(list)
 	_shop_buttons.clear()
@@ -264,10 +282,13 @@ func _rebuild_shop() -> void:
 func _add_shop_button(list: VBoxContainer, kind: String, entry: Dictionary) -> void:
 	var button := Button.new()
 	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	button.icon = Assets.texture(entry["name"])
 	button.expand_icon = false
 	button.add_theme_constant_override("icon_max_width", 32)
 	button.tooltip_text = entry["desc"]
+	if entry.has("flavor"):
+		button.tooltip_text += "\n\"%s\"" % entry["flavor"]
 	var id: String = entry["id"]
 	match kind:
 		"tech":
@@ -315,6 +336,21 @@ func _refresh() -> void:
 			parts.append("-%s %s" % [NumFormat.fmt(job["consumes"][res]), GameData.resource_name(res)])
 		row["output"].text = ", ".join(parts) + " each/s"
 
+	if _available_signature() != _shop_signature:
+		_rebuild_shop()
+
+	for item in _commission_buttons:
+		var maker_id: String = item["maker"]
+		var cost := Game.commission_cost(maker_id)
+		var free := Game.maker_slots(maker_id) - Game.maker_busy(maker_id)
+		item["button"].text = "Commission an item (%d free)\nCost: %s" % [free, NumFormat.cost(cost)]
+		item["button"].disabled = free <= 0 or not Game.can_afford(cost)
+	for item in _craft_bars:
+		var craft: Dictionary = item["craft"]
+		var bar: ProgressBar = item["bar"]
+		bar.value = 1.0 - craft["remaining"] / craft["total"]
+		item["label"].text = "Crafting... %s left" % NumFormat.duration(ceilf(craft["remaining"] / Game.mult("craft_speed")))
+
 	for item in _shop_buttons:
 		var button: Button = item["button"]
 		var entry: Dictionary = item["entry"]
@@ -325,8 +361,89 @@ func _refresh() -> void:
 			title += " (%d)" % Game.buildings.get(entry["id"], 0)
 		else:
 			cost = entry["cost"]
-		button.text = "%s\n%s\nCost: %s" % [title, entry["desc"], NumFormat.cost(cost)]
+		var text := "%s\n%s" % [title, entry["desc"]]
+		if entry.has("flavor"):
+			text += "\n\"%s\"" % entry["flavor"]
+		button.text = text + "\nCost: " + NumFormat.cost(cost)
 		button.disabled = not Game.can_afford(cost)
+
+
+func _rebuild_crafting() -> void:
+	_clear(_craft_list)
+	_commission_buttons.clear()
+	_craft_bars.clear()
+	for maker in GameData.MAKERS:
+		var maker_id: String = maker["id"]
+		var slots := Game.maker_slots(maker_id)
+		var header := Label.new()
+		header.add_theme_font_size_override("font_size", 18)
+		header.text = "%ss: %d" % [maker["name"], slots]
+		_craft_list.add_child(header)
+		if slots == 0:
+			var hint := Label.new()
+			hint.text = "Build an %s in the Buildings tab to start crafting." % maker["name"]
+			hint.modulate = Color(1, 1, 1, 0.6)
+			hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_craft_list.add_child(hint)
+			continue
+		var button := Button.new()
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.tooltip_text = "Pay up and get a random item. Rarer items are rarer, obviously."
+		button.pressed.connect(func(): Game.start_commission(maker_id))
+		_craft_list.add_child(button)
+		_commission_buttons.append({"button": button, "maker": maker_id})
+		for craft in Game.crafts:
+			if craft["maker"] != maker_id:
+				continue
+			var label := Label.new()
+			_craft_list.add_child(label)
+			var bar := ProgressBar.new()
+			bar.max_value = 1.0
+			bar.show_percentage = false
+			bar.custom_minimum_size.y = 12
+			_craft_list.add_child(bar)
+			_craft_bars.append({"bar": bar, "label": label, "craft": craft})
+
+	_craft_list.add_child(HSeparator.new())
+	var collection := Label.new()
+	collection.add_theme_font_size_override("font_size", 18)
+	collection.text = "Collection (%d items)" % Game.total_items()
+	_craft_list.add_child(collection)
+	for it in GameData.ITEMS:
+		var owned: int = Game.items.get(it["id"], 0)
+		if owned == 0:
+			continue
+		var row := HBoxContainer.new()
+		row.tooltip_text = "\"%s\"" % it["flavor"]
+		var icon := _icon(it["name"])
+		if icon:
+			row.add_child(icon)
+		var label := Label.new()
+		label.text = "%s%s: %s" % [it["name"], "" if owned == 1 else " x%d" % owned, it["desc"]]
+		label.modulate = GameData.RARITIES[it["rarity"]]["color"]
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.mouse_filter = Control.MOUSE_FILTER_PASS
+		row.add_child(label)
+		_craft_list.add_child(row)
+
+	var active := Game.active_synergies()
+	var syn_header := Label.new()
+	syn_header.add_theme_font_size_override("font_size", 18)
+	syn_header.text = "Synergies (%d / %d found)" % [active.size(), GameData.SYNERGIES.size()]
+	_craft_list.add_child(syn_header)
+	for syn in active:
+		var label := Label.new()
+		label.text = "%s: %s" % [syn["name"], syn["desc"]]
+		label.modulate = GOOD_COLOR
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_craft_list.add_child(label)
+	if active.size() < GameData.SYNERGIES.size():
+		var secret := Label.new()
+		secret.text = "??? Some items work better together..."
+		secret.modulate = Color(1, 1, 1, 0.5)
+		_craft_list.add_child(secret)
 
 
 func _on_message(text: String) -> void:

@@ -24,11 +24,18 @@ var population: int = STARTING_POPULATION
 var starving := false
 var rates: Dictionary = {}
 var spoil_rates: Dictionary = {}
+var lifetime: Dictionary = {}
+var clicks: int = 0
+var revealed: Dictionary = {}
+var items: Dictionary = {}
+var crafts: Array = []
+var crafted_count: Dictionary = {}
 
 var _grow_progress := 0.0
 var _starve_progress := 0.0
 var _accum := 0.0
 var _mods: Dictionary = {}
+var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
@@ -44,6 +51,12 @@ func reset() -> void:
 	techs.clear()
 	rates.clear()
 	spoil_rates.clear()
+	lifetime.clear()
+	clicks = 0
+	revealed.clear()
+	items.clear()
+	crafts.clear()
+	crafted_count.clear()
 	for r in GameData.RESOURCES:
 		amounts[r["id"]] = 0.0
 	for id in GameData.STARTING_RESOURCES:
@@ -53,8 +66,7 @@ func reset() -> void:
 	starving = false
 	_grow_progress = 0.0
 	_starve_progress = 0.0
-	rebuild_modifiers()
-	structure_changed.emit()
+	_changed()
 
 
 func _process(delta: float) -> void:
@@ -72,6 +84,7 @@ func _process(delta: float) -> void:
 func simulate(dt: float, offline: bool) -> void:
 	var before := amounts.duplicate()
 	_run_jobs(dt)
+	_run_crafts(dt)
 	_feed_population(dt, offline)
 	if offline:
 		return
@@ -99,7 +112,9 @@ func _run_jobs(dt: float) -> void:
 		var m := job_multiplier(job["id"])
 		var produces: Dictionary = job["produces"]
 		for res in produces:
-			amounts[res] += produces[res] * workers * dt * ratio * m
+			var made: float = produces[res] * workers * dt * ratio * m
+			amounts[res] += made
+			lifetime[res] = lifetime.get(res, 0.0) + made
 
 
 func _feed_population(dt: float, offline: bool) -> void:
@@ -140,7 +155,7 @@ func _update_population(dt: float) -> void:
 	if _grow_progress >= 1.0:
 		_grow_progress = 0.0
 		population += 1
-		structure_changed.emit()
+		_changed()
 
 
 func _lose_person() -> void:
@@ -155,7 +170,7 @@ func _lose_person() -> void:
 				busiest = id
 		jobs[busiest] -= 1
 	post("Someone starved to death.")
-	structure_changed.emit()
+	_changed()
 
 
 # --- modifiers -------------------------------------------------------------
@@ -171,6 +186,19 @@ func rebuild_modifiers() -> void:
 		if upgrades.has(u["id"]):
 			for e in u["effects"]:
 				_apply_effect(e, 1)
+	for it in GameData.ITEMS:
+		var owned: int = items.get(it["id"], 0)
+		if owned > 0:
+			for e in it["effects"]:
+				_apply_effect(e, owned)
+	for syn in active_synergies():
+		for e in syn["effects"]:
+			_apply_effect(e, 1)
+
+
+func _changed() -> void:
+	rebuild_modifiers()
+	structure_changed.emit()
 
 
 func _apply_effect(effect: Dictionary, count: int) -> void:
@@ -180,7 +208,23 @@ func _apply_effect(effect: Dictionary, count: int) -> void:
 		m["add"] += float(effect["add"]) * count
 	if effect.has("mult"):
 		m["mult"] *= pow(float(effect["mult"]), count)
+	if effect.has("per"):
+		m["mult"] *= pow(1.0 + float(effect["pct"]) * count_of(effect["per"]), count)
 	_mods[key] = m
+
+
+# Counters used by "per" effects and unlock conditions: job:<id>, building:<id>, population, items.
+func count_of(counter: String) -> int:
+	if counter == "population":
+		return population
+	if counter == "items":
+		return total_items()
+	var parts := counter.split(":")
+	if parts[0] == "job":
+		return jobs.get(parts[1], 0)
+	if parts[0] == "building":
+		return buildings.get(parts[1], 0)
+	return 0
 
 
 func mult(key: String) -> float:
@@ -197,6 +241,16 @@ func job_multiplier(job_id: String) -> float:
 
 func food_per_second_per_person() -> float:
 	return FOOD_PER_PERSON * mult("food_use")
+
+
+# Ignores input shortages; used for click_cps so it doesn't flicker.
+func production_per_second(resource_id: String) -> float:
+	var total := 0.0
+	for job in GameData.JOBS:
+		var workers: int = jobs.get(job["id"], 0)
+		if workers > 0 and job["produces"].has(resource_id):
+			total += job["produces"][resource_id] * workers * job_multiplier(job["id"])
+	return total
 
 
 func pop_cap() -> int:
@@ -224,8 +278,33 @@ func building_available(b: Dictionary) -> bool:
 	return is_unlocked(b["requires"])
 
 
+# Once an upgrade's unlock conditions are met it stays revealed, like Cookie Clicker.
 func upgrade_available(u: Dictionary) -> bool:
-	return not upgrades.has(u["id"]) and is_unlocked(u["requires"])
+	if upgrades.has(u["id"]) or not is_unlocked(u["requires"]):
+		return false
+	if revealed.has(u["id"]):
+		return true
+	for c in u.get("unlock", []):
+		if not condition_met(c):
+			return false
+	revealed[u["id"]] = true
+	return true
+
+
+func condition_met(c: Dictionary) -> bool:
+	if c.has("job"):
+		return jobs.get(c["job"], 0) >= c["count"]
+	if c.has("building"):
+		return buildings.get(c["building"], 0) >= c["count"]
+	if c.has("lifetime"):
+		return lifetime.get(c["lifetime"], 0.0) >= c["amount"]
+	if c.has("clicks"):
+		return clicks >= c["clicks"]
+	if c.has("population"):
+		return population >= c["population"]
+	if c.has("items"):
+		return total_items() >= c["items"]
+	return false
 
 
 func tech_available(t: Dictionary) -> bool:
@@ -264,8 +343,10 @@ func click_gather(resource_id: String) -> float:
 	var r := GameData.find("resource", resource_id)
 	if r.is_empty() or not r.get("clickable", false) or not is_unlocked(resource_id):
 		return 0.0
-	var gained := mult("click") * mult("click:" + resource_id)
+	var gained := mult("click") * mult("click:" + resource_id) + add("click_cps") * production_per_second(resource_id)
 	amounts[resource_id] += gained
+	lifetime[resource_id] = lifetime.get(resource_id, 0.0) + gained
+	clicks += 1
 	return gained
 
 
@@ -278,7 +359,7 @@ func assign_job(job_id: String, delta: int) -> void:
 	if change == 0:
 		return
 	jobs[job_id] = current + change
-	structure_changed.emit()
+	_changed()
 
 
 func buy_building(id: String) -> bool:
@@ -286,8 +367,7 @@ func buy_building(id: String) -> bool:
 	if b.is_empty() or not building_available(b) or not _pay(building_cost(id)):
 		return false
 	buildings[id] = buildings.get(id, 0) + 1
-	rebuild_modifiers()
-	structure_changed.emit()
+	_changed()
 	return true
 
 
@@ -296,9 +376,8 @@ func buy_upgrade(id: String) -> bool:
 	if u.is_empty() or not upgrade_available(u) or not _pay(u["cost"]):
 		return false
 	upgrades[id] = true
-	rebuild_modifiers()
 	post("Upgrade bought: %s" % u["name"])
-	structure_changed.emit()
+	_changed()
 	return true
 
 
@@ -309,8 +388,116 @@ func research(id: String) -> bool:
 	techs[id] = true
 	unlocked[t["unlocks"]] = true
 	post("Discovered %s! %s unlocked." % [t["name"], GameData.resource_name(t["unlocks"])])
+	_changed()
+	return true
+
+
+# --- crafting ----------------------------------------------------------------
+
+func maker_slots(maker_id: String) -> int:
+	var maker := GameData.find("maker", maker_id)
+	return buildings.get(maker["building"], 0)
+
+
+func maker_busy(maker_id: String) -> int:
+	var busy := 0
+	for c in crafts:
+		if c["maker"] == maker_id:
+			busy += 1
+	return busy
+
+
+func commission_cost(maker_id: String) -> Dictionary:
+	var maker := GameData.find("maker", maker_id)
+	var done: int = crafted_count.get(maker_id, 0)
+	var cost := {}
+	for res in maker["cost"]:
+		cost[res] = ceilf(maker["cost"][res] * pow(maker["cost_scale"], done))
+	return cost
+
+
+func commission_time(maker_id: String) -> float:
+	return GameData.find("maker", maker_id)["time"]
+
+
+func start_commission(maker_id: String) -> bool:
+	if GameData.find("maker", maker_id).is_empty():
+		return false
+	if maker_busy(maker_id) >= maker_slots(maker_id) or not _pay(commission_cost(maker_id)):
+		return false
+	crafted_count[maker_id] = crafted_count.get(maker_id, 0) + 1
+	var time := commission_time(maker_id)
+	crafts.append({"maker": maker_id, "remaining": time, "total": time})
 	structure_changed.emit()
 	return true
+
+
+func _run_crafts(dt: float) -> void:
+	var speed := mult("craft_speed")
+	var finished: Array = []
+	for c in crafts:
+		c["remaining"] -= dt * speed
+		if c["remaining"] <= 0.0:
+			finished.append(c)
+	for c in finished:
+		crafts.erase(c)
+		_grant_item(roll_item(c["maker"]))
+	if add("auto_craft") > 0.0:
+		for maker in GameData.MAKERS:
+			while maker_busy(maker["id"]) < maker_slots(maker["id"]) and start_commission(maker["id"]):
+				pass
+
+
+func roll_item(maker_id: String) -> String:
+	var luck := mult("luck")
+	var pool: Array = []
+	var total := 0.0
+	for it in GameData.ITEMS:
+		if it["maker"] != maker_id:
+			continue
+		var w: float = GameData.RARITIES[it["rarity"]]["weight"]
+		if it["rarity"] != "common":
+			w *= luck
+		pool.append([it["id"], w])
+		total += w
+	var pick := _rng.randf() * total
+	for entry in pool:
+		pick -= entry[1]
+		if pick <= 0.0:
+			return entry[0]
+	return pool[-1][0]
+
+
+func _grant_item(item_id: String) -> void:
+	var before := active_synergies()
+	items[item_id] = items.get(item_id, 0) + 1
+	var it := GameData.find("item", item_id)
+	var rarity: String = GameData.RARITIES[it["rarity"]]["name"]
+	post("Crafted: %s (%s)%s" % [it["name"], rarity, "" if items[item_id] == 1 else " x%d" % items[item_id]])
+	_changed()
+	for syn in active_synergies():
+		if not before.has(syn):
+			post("SYNERGY! %s: %s" % [syn["name"], syn["desc"]])
+
+
+func total_items() -> int:
+	var n := 0
+	for id in items:
+		n += items[id]
+	return n
+
+
+func active_synergies() -> Array:
+	var result: Array = []
+	for syn in GameData.SYNERGIES:
+		var complete := true
+		for id in syn["items"]:
+			if not items.has(id):
+				complete = false
+				break
+		if complete:
+			result.append(syn)
+	return result
 
 
 func post(text: String) -> void:
@@ -346,6 +533,12 @@ func to_dict() -> Dictionary:
 		"upgrades": upgrades.keys(),
 		"techs": techs.keys(),
 		"population": population,
+		"lifetime": lifetime.duplicate(),
+		"clicks": clicks,
+		"revealed": revealed.keys(),
+		"items": items.duplicate(),
+		"crafts": crafts.duplicate(true),
+		"crafted_count": crafted_count.duplicate(),
 	}
 
 
@@ -368,5 +561,19 @@ func from_dict(data: Dictionary) -> void:
 	for id in saved_buildings:
 		buildings[id] = int(saved_buildings[id])
 	population = int(data.get("population", STARTING_POPULATION))
-	rebuild_modifiers()
-	structure_changed.emit()
+	var saved_lifetime: Dictionary = data.get("lifetime", {})
+	for id in saved_lifetime:
+		lifetime[id] = float(saved_lifetime[id])
+	clicks = int(data.get("clicks", 0))
+	for id in data.get("revealed", []):
+		revealed[id] = true
+	var saved_items: Dictionary = data.get("items", {})
+	for id in saved_items:
+		if not GameData.find("item", id).is_empty():
+			items[id] = int(saved_items[id])
+	for c in data.get("crafts", []):
+		crafts.append({"maker": c["maker"], "remaining": float(c["remaining"]), "total": float(c["total"])})
+	var saved_crafted: Dictionary = data.get("crafted_count", {})
+	for id in saved_crafted:
+		crafted_count[id] = int(saved_crafted[id])
+	_changed()
