@@ -30,6 +30,8 @@ var revealed: Dictionary = {}
 var items: Dictionary = {}
 var crafts: Array = []
 var crafted_count: Dictionary = {}
+var conquered: Dictionary = {}
+var pending_invasion := ""
 
 var _grow_progress := 0.0
 var _starve_progress := 0.0
@@ -57,6 +59,8 @@ func reset() -> void:
 	items.clear()
 	crafts.clear()
 	crafted_count.clear()
+	conquered.clear()
+	pending_invasion = ""
 	for r in GameData.RESOURCES:
 		amounts[r["id"]] = 0.0
 	for id in GameData.STARTING_RESOURCES:
@@ -194,6 +198,10 @@ func rebuild_modifiers() -> void:
 	for syn in active_synergies():
 		for e in syn["effects"]:
 			_apply_effect(e, 1)
+	for c in GameData.COUNTRIES:
+		if conquered.has(c["id"]):
+			for e in c["effects"]:
+				_apply_effect(e, 1)
 
 
 func _changed() -> void:
@@ -271,7 +279,7 @@ func is_unlocked(resource_id: String) -> bool:
 
 
 func job_available(job: Dictionary) -> bool:
-	return is_unlocked(job["requires"])
+	return is_unlocked(job["requires"]) and (not job.has("requires_tech") or techs.has(job["requires_tech"]))
 
 
 func building_available(b: Dictionary) -> bool:
@@ -386,8 +394,9 @@ func research(id: String) -> bool:
 	if t.is_empty() or not tech_available(t) or not _pay(t["cost"]):
 		return false
 	techs[id] = true
-	unlocked[t["unlocks"]] = true
-	post("Discovered %s! %s unlocked." % [t["name"], GameData.resource_name(t["unlocks"])])
+	if t["unlocks"] != "":
+		unlocked[t["unlocks"]] = true
+	post("Discovered %s! %s" % [t["name"], t["desc"]])
 	_changed()
 	return true
 
@@ -500,7 +509,64 @@ func active_synergies() -> Array:
 	return result
 
 
+# --- invasions ----------------------------------------------------------------
+
+const BASE_ARMY := 300.0
+const TROOPS_PER_WARRIOR := 50.0
+
+
+func invasion_unlocked() -> bool:
+	return techs.has("warfare")
+
+
+func army_size() -> float:
+	return (BASE_ARMY + jobs.get("warrior", 0) * TROOPS_PER_WARRIOR) * mult("army:size")
+
+
+# The first unconquered country, or {} when all are conquered. Check is_unlocked(country.requires) before launching.
+func next_country() -> Dictionary:
+	for c in GameData.COUNTRIES:
+		if not conquered.has(c["id"]):
+			return c
+	return {}
+
+
+func can_invade(country_id: String) -> bool:
+	var c := next_country()
+	return invasion_unlocked() and not c.is_empty() and c["id"] == country_id and is_unlocked(c["requires"]) and can_afford(c["cost"])
+
+
+func start_invasion(country_id: String) -> bool:
+	if not can_invade(country_id):
+		return false
+	_pay(GameData.find("country", country_id)["cost"])
+	pending_invasion = country_id
+	return true
+
+
+func finish_invasion(won: bool) -> void:
+	var c := GameData.find("country", pending_invasion)
+	pending_invasion = ""
+	if c.is_empty():
+		return
+	if not won:
+		post("The invasion of %s failed. The supplies are gone." % c["name"])
+		return
+	conquered[c["id"]] = true
+	for res in c["loot"]:
+		amounts[res] = amounts.get(res, 0.0) + c["loot"][res]
+	post("Conquered %s! Loot: %s. %s" % [c["name"], NumFormat.cost(c["loot"]), c["reward_desc"]])
+	_changed()
+
+
+const MESSAGE_HISTORY := 5
+var recent_messages: PackedStringArray = []
+
+
 func post(text: String) -> void:
+	recent_messages.append(text)
+	while recent_messages.size() > MESSAGE_HISTORY:
+		recent_messages.remove_at(0)
 	message_posted.emit(text)
 
 
@@ -539,6 +605,7 @@ func to_dict() -> Dictionary:
 		"items": items.duplicate(),
 		"crafts": crafts.duplicate(true),
 		"crafted_count": crafted_count.duplicate(),
+		"conquered": conquered.keys(),
 	}
 
 
@@ -573,6 +640,8 @@ func from_dict(data: Dictionary) -> void:
 			items[id] = int(saved_items[id])
 	for c in data.get("crafts", []):
 		crafts.append({"maker": c["maker"], "remaining": float(c["remaining"]), "total": float(c["total"])})
+	for id in data.get("conquered", []):
+		conquered[id] = true
 	var saved_crafted: Dictionary = data.get("crafted_count", {})
 	for id in saved_crafted:
 		crafted_count[id] = int(saved_crafted[id])

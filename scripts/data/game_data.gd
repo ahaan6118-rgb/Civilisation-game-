@@ -28,6 +28,8 @@ const TECHS := [
 		"desc": "Shape rocks into tools. Unlocks Stone."},
 	{"id": "pottery", "name": "Pottery", "requires": "stone_working", "unlocks": "clay", "cost": {"stone": 1e4},
 		"desc": "Dig and fire clay. Unlocks Clay."},
+	{"id": "warfare", "name": "Warfare", "requires": "pottery", "unlocks": "", "cost": {"stone": 5000.0, "clay": 2000.0},
+		"desc": "Unlocks Warriors and invading other countries."},
 	{"id": "copper_smelting", "name": "Copper Smelting", "requires": "pottery", "unlocks": "copper", "cost": {"clay": 1e5},
 		"desc": "Kilns hot enough to melt ore. Unlocks Copper."},
 	{"id": "bronze_casting", "name": "Bronze Casting", "requires": "copper_smelting", "unlocks": "bronze", "cost": {"copper": 1e6},
@@ -52,12 +54,14 @@ const TECHS := [
 		"desc": "Harvest the unseen. Unlocks Dark Matter."},
 ]
 
-# Rates are per worker per second. A job appears once its "requires" resource is unlocked.
+# Rates are per worker per second. A job appears once its "requires" resource (and "requires_tech", if any) is unlocked.
 const JOBS := [
 	{"id": "gatherer", "name": "Gatherer", "requires": "food", "produces": {"food": 0.5}},
 	{"id": "woodcutter", "name": "Woodcutter", "requires": "wood", "produces": {"wood": 1.0}},
 	{"id": "quarrier", "name": "Quarrier", "requires": "stone", "produces": {"stone": 1.0}},
 	{"id": "clay_digger", "name": "Clay Digger", "requires": "clay", "produces": {"clay": 4.0}},
+	{"id": "warrior", "name": "Warrior", "requires": "clay", "requires_tech": "warfare", "produces": {}, "consumes": {"food": 0.25},
+		"note": "+50 troops"},
 	{"id": "copper_miner", "name": "Copper Miner", "requires": "copper", "produces": {"copper": 15.0}},
 	{"id": "bronzesmith", "name": "Bronzesmith", "requires": "bronze", "produces": {"bronze": 40.0}, "consumes": {"copper": 20.0}},
 	{"id": "iron_miner", "name": "Iron Miner", "requires": "iron", "produces": {"iron": 150.0}},
@@ -74,7 +78,8 @@ const JOBS := [
 # Effects: {"key": k, "add": n} adds n per copy; {"key": k, "mult": m} multiplies by m per copy;
 # {"key": k, "per": counter, "pct": p} multiplies by (1 + p * counter), see Game.count_of() for counters.
 # Keys: pop_cap, growth, click, click:<resource>, click_cps (click also gives this fraction of the
-# resource's production/s), job:<job>, job:all, spoil:<resource>, food_use, craft_speed, luck, auto_craft.
+# resource's production/s), job:<job>, job:all, spoil:<resource>, food_use, craft_speed, luck, auto_craft,
+# army:size, army:regen, army:attack.
 const BUILDINGS := [
 	{"id": "hut", "name": "Hut", "requires": "wood", "cost": {"wood": 15.0}, "scale": 1.15,
 		"desc": "+3 max population.", "effects": [{"key": "pop_cap", "add": 3}]},
@@ -226,6 +231,23 @@ const UPGRADES := [
 		"desc": "All workers +2% per item owned.", "flavor": "",
 		"effects": [{"key": "job:all", "per": "items", "pct": 0.02}]},
 
+	# army
+	{"id": "pointy_sticks", "name": "Pointy Sticks", "requires": "clay", "cost": {"stone": 3000.0, "wood": 5000.0}, "unlock": [{"job": "warrior", "count": 1}],
+		"desc": "Troops conquer land 25% cheaper.", "flavor": "",
+		"effects": [{"key": "army:attack", "mult": 1.25}]},
+	{"id": "war_drums", "name": "War Drums", "requires": "clay", "cost": {"wood": 2e4, "clay": 5000.0}, "unlock": [{"job": "warrior", "count": 10}],
+		"desc": "Troops regenerate 50% faster.", "flavor": "",
+		"effects": [{"key": "army:regen", "mult": 1.5}]},
+	{"id": "standing_army", "name": "Standing Army", "requires": "clay", "cost": {"food": 1e4, "clay": 2e4}, "unlock": [{"population": 50}],
+		"desc": "Army size and max troops 1.5x.", "flavor": "",
+		"effects": [{"key": "army:size", "mult": 1.5}]},
+	{"id": "bronze_spears", "name": "Bronze Spears", "requires": "bronze", "cost": {"bronze": 1e5}, "unlock": [{"job": "warrior", "count": 25}],
+		"desc": "Troops conquer land 50% cheaper.", "flavor": "",
+		"effects": [{"key": "army:attack", "mult": 1.5}]},
+	{"id": "iron_swords", "name": "Iron Swords", "requires": "iron", "cost": {"iron": 1e6}, "unlock": [{"job": "warrior", "count": 50}],
+		"desc": "Troops conquer land 2x cheaper.", "flavor": "",
+		"effects": [{"key": "army:attack", "mult": 2.0}]},
+
 	# later eras
 	{"id": "shiny_rocks", "name": "Ooh, Shiny", "requires": "copper", "cost": {"copper": 2000.0}, "unlock": [{"job": "copper_miner", "count": 1}],
 		"desc": "Copper Miners produce 2x.", "flavor": "",
@@ -332,13 +354,44 @@ const SYNERGIES := [
 		"desc": "All workers produce 2x.", "effects": [{"key": "job:all", "mult": 2.0}]},
 ]
 
+# --- invasions ------------------------------------------------------------------
+
+# Countries are invaded in order; each needs the previous one conquered and its "requires" resource unlocked.
+# Conquering pays out "loot" once and applies "effects" permanently.
+const COUNTRIES := [
+	{"id": "ugs_tribe", "name": "Ug's Tribe", "requires": "clay", "desc": "A small tribe next door.",
+		"enemies": [{"name": "Ug's Tribe", "color": Color(0.85, 0.3, 0.25), "troop_mult": 0.6, "aggression": 0.2}],
+		"cost": {"food": 2000.0, "wood": 5000.0}, "loot": {"food": 1e4, "wood": 2e4, "stone": 2e4},
+		"reward_desc": "All workers produce 1.25x.", "effects": [{"key": "job:all", "mult": 1.25}]},
+	{"id": "the_mudlands", "name": "The Mudlands", "requires": "clay", "desc": "A swampy people who really like mud.",
+		"enemies": [{"name": "Mud People", "color": Color(0.65, 0.45, 0.25), "troop_mult": 1.0, "aggression": 0.35}],
+		"cost": {"food": 5000.0, "clay": 5000.0}, "loot": {"clay": 1e5},
+		"reward_desc": "Population grows 1.5x faster, +20 max population.", "effects": [{"key": "growth", "mult": 1.5}, {"key": "pop_cap", "add": 20}]},
+	{"id": "copper_clans", "name": "Copper Hill Clans", "requires": "copper", "desc": "Two clans fighting over shiny hills.",
+		"enemies": [{"name": "Red Hill Clan", "color": Color(0.9, 0.45, 0.2), "troop_mult": 1.3, "aggression": 0.4},
+			{"name": "Green Hill Clan", "color": Color(0.35, 0.75, 0.3), "troop_mult": 1.3, "aggression": 0.4}],
+		"cost": {"food": 2e4, "copper": 2e4}, "loot": {"copper": 5e5},
+		"reward_desc": "All workers produce 1.5x.", "effects": [{"key": "job:all", "mult": 1.5}]},
+	{"id": "bronze_kingdom", "name": "The Bronze Kingdom", "requires": "bronze", "desc": "A proper kingdom with a king and everything.",
+		"enemies": [{"name": "Bronze Kingdom", "color": Color(0.8, 0.6, 0.2), "troop_mult": 1.8, "aggression": 0.5},
+			{"name": "Tin Traders", "color": Color(0.6, 0.6, 0.7), "troop_mult": 1.2, "aggression": 0.3}],
+		"cost": {"food": 1e5, "bronze": 1e5}, "loot": {"bronze": 5e6},
+		"reward_desc": "All workers produce 2x.", "effects": [{"key": "job:all", "mult": 2.0}]},
+	{"id": "iron_empire", "name": "The Iron Empire", "requires": "iron", "desc": "Three iron-clad nations that hate everyone.",
+		"enemies": [{"name": "Iron Empire", "color": Color(0.45, 0.45, 0.5), "troop_mult": 2.5, "aggression": 0.6},
+			{"name": "Rust Legion", "color": Color(0.7, 0.3, 0.15), "troop_mult": 1.5, "aggression": 0.5},
+			{"name": "Ore Barons", "color": Color(0.55, 0.35, 0.55), "troop_mult": 1.5, "aggression": 0.4}],
+		"cost": {"food": 5e5, "iron": 1e6}, "loot": {"iron": 5e7},
+		"reward_desc": "All workers produce 2.5x.", "effects": [{"key": "job:all", "mult": 2.5}]},
+]
+
 static var _index: Dictionary = {}
 
 
 static func find(list_name: String, id: String) -> Dictionary:
 	if _index.is_empty():
 		for pair in [["resource", RESOURCES], ["tech", TECHS], ["job", JOBS], ["building", BUILDINGS], ["upgrade", UPGRADES],
-				["maker", MAKERS], ["item", ITEMS], ["synergy", SYNERGIES]]:
+				["maker", MAKERS], ["item", ITEMS], ["synergy", SYNERGIES], ["country", COUNTRIES]]:
 			for entry in pair[1]:
 				_index["%s:%s" % [pair[0], entry["id"]]] = entry
 	return _index.get("%s:%s" % [list_name, id], {})

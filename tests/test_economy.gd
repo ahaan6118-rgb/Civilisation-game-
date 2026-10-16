@@ -158,6 +158,62 @@ func _run() -> void:
 	_game.apply_offline(120.0)
 	_check(_game.total_items() >= 4, "commissions finish offline")
 
+	print("invasion map")
+	var m := InvasionMap.new()
+	m.generate(96, 54, 7, {"name": "You", "color": Color.BLUE, "troops": 300.0},
+		[{"name": "Ug", "color": Color.RED, "troop_mult": 0.6, "aggression": 0.2}])
+	_check(m.nations[0]["tiles"] > 20 and m.nations[1]["tiles"] > 20, "both nations spawn with land")
+	_check(m.status() == "playing", "game starts in progress")
+	_check(m.neighbours_of(0).has(InvasionMap.NEUTRAL), "player borders neutral land")
+	_check(not m.send_attack(0, 1, 0.5), "cannot attack a nation you don't border")
+	var start_tiles: int = m.nations[0]["tiles"]
+	_check(m.send_attack(0, InvasionMap.NEUTRAL, 0.5), "attack neutral land")
+	_check(is_equal_approx(m.nations[0]["troops"], 150.0), "half the troops leave")
+	for i in 50:
+		m.tick(0.1)
+	_check(m.nations[0]["tiles"] > start_tiles + 10, "territory expands (%d -> %d)" % [start_tiles, m.nations[0]["tiles"]])
+	for i in m.owners.size():
+		if m.owners[i] == 1:
+			m.owners[i] = 0
+	m._recount()
+	_check(m.status() == "won", "wiping out the enemy wins")
+
+	print("invasions in the economy")
+	_game.reset()
+	_game.unlocked["stone"] = true
+	_game.unlocked["clay"] = true
+	_game.techs["stone_working"] = true
+	_game.techs["pottery"] = true
+	_check(not _game.job_available(GameData.find("job", "warrior")), "no warriors before Warfare")
+	_game.amounts["stone"] = 5000.0
+	_game.amounts["clay"] = 2000.0
+	_check(_game.research("warfare") and _game.invasion_unlocked(), "research Warfare")
+	_check(_game.is_unlocked("clay") and not _game.unlocked.has(""), "Warfare unlocks no resource")
+	_game.population = 5
+	_game.assign_job("warrior", 4)
+	_check(is_equal_approx(_game.army_size(), 500.0), "4 warriors add 200 troops")
+	_check(_game.next_country()["id"] == "ugs_tribe", "Ug's Tribe is first")
+	_check(not _game.start_invasion("ugs_tribe"), "need supplies to invade")
+	_game.amounts["food"] = 1e5
+	_game.amounts["wood"] = 1e5
+	_check(not _game.start_invasion("the_mudlands"), "cannot skip ahead")
+	_check(_game.start_invasion("ugs_tribe") and _game.pending_invasion == "ugs_tribe", "launch invasion")
+	var invasion_screen: Node = load("res://scenes/invasion.tscn").instantiate()
+	root.add_child(invasion_screen)
+	for i in 10:
+		await process_frame
+	_check(invasion_screen.map.nations.size() == 2, "invasion screen builds the map")
+	invasion_screen.queue_free()
+	var wood_before: float = _game.amounts["wood"]
+	_game.finish_invasion(true)
+	_check(_game.conquered.has("ugs_tribe") and _game.amounts["wood"] == wood_before + 2e4, "conquest gives loot")
+	_check(is_equal_approx(_game.job_multiplier("woodcutter"), 1.25), "conquest bonus applies")
+	_check(_game.next_country()["id"] == "the_mudlands", "Mudlands is next")
+	var conquest_save: Dictionary = JSON.parse_string(JSON.stringify(_game.to_dict()))
+	_game.reset()
+	_game.from_dict(conquest_save)
+	_check(_game.conquered.has("ugs_tribe"), "conquests saved")
+
 	print("number formatting")
 	_check(NumFormat.fmt(999) == "999", "999")
 	_check(NumFormat.fmt(1000) == "1.00K", "1.00K")

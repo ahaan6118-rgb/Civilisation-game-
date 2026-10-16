@@ -8,6 +8,8 @@ static func fmt(value: float) -> String:
 	var sign := "-" if value < 0.0 else ""
 	var a := absf(value)
 	if a < 1000.0:
+		if a < 1.0 and not is_zero_approx(a):
+			return sign + "%.2f" % a
 		if a < 100.0 and not is_equal_approx(a, floorf(a)):
 			return sign + "%.1f" % a
 		return sign + "%d" % int(floorf(a))

@@ -14,6 +14,8 @@ var _tech_list: VBoxContainer
 var _building_list: VBoxContainer
 var _upgrade_list: VBoxContainer
 var _craft_list: VBoxContainer
+var _invasion_list: VBoxContainer
+var _invade_button: Button
 var _log_label: Label
 var _confirm_wipe: ConfirmationDialog
 
@@ -31,6 +33,8 @@ func _ready() -> void:
 	_build_layout()
 	Game.structure_changed.connect(_rebuild_lists)
 	Game.message_posted.connect(_on_message)
+	_log = Game.recent_messages.duplicate()
+	_log_label.text = "\n".join(_log)
 	_rebuild_lists()
 
 
@@ -83,12 +87,15 @@ func _build_layout() -> void:
 
 	var tabs := TabContainer.new()
 	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tabs.size_flags_stretch_ratio = 1.2
+	tabs.size_flags_stretch_ratio = 1.4
+	tabs.custom_minimum_size.x = 450
+	tabs.add_theme_font_size_override("font_size", 15)
 	_columns.add_child(tabs)
 	_tech_list = _make_tab(tabs, "Discoveries")
 	_building_list = _make_tab(tabs, "Buildings")
 	_upgrade_list = _make_tab(tabs, "Upgrades")
 	_craft_list = _make_tab(tabs, "Crafting")
+	_invasion_list = _make_tab(tabs, "Invasions")
 
 	var bottom := HBoxContainer.new()
 	root.add_child(bottom)
@@ -171,6 +178,7 @@ func _rebuild_lists() -> void:
 	_rebuild_jobs()
 	_rebuild_shop()
 	_rebuild_crafting()
+	_rebuild_invasions()
 	_refresh()
 
 
@@ -216,11 +224,14 @@ func _rebuild_jobs() -> void:
 			row.add_child(icon)
 		var name_label := Label.new()
 		name_label.text = job["name"]
-		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_label.custom_minimum_size.x = 110
 		name_label.mouse_filter = Control.MOUSE_FILTER_PASS
 		row.add_child(name_label)
 		var output := Label.new()
 		output.modulate = Color(1, 1, 1, 0.7)
+		output.clip_text = true
+		output.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		output.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		row.add_child(output)
 		var minus := Button.new()
 		minus.text = "-"
@@ -334,10 +345,18 @@ func _refresh() -> void:
 			parts.append("+%s %s" % [NumFormat.fmt(job["produces"][res] * m), GameData.resource_name(res)])
 		for res in job.get("consumes", {}):
 			parts.append("-%s %s" % [NumFormat.fmt(job["consumes"][res]), GameData.resource_name(res)])
-		row["output"].text = ", ".join(parts) + " each/s"
+		var output := ", ".join(parts) + " each/s" if not parts.is_empty() else ""
+		if job.has("note"):
+			output = job["note"] + ("  " + output if output != "" else "")
+		row["output"].text = output
 
 	if _available_signature() != _shop_signature:
 		_rebuild_shop()
+
+	if _invade_button:
+		var c := Game.next_country()
+		_invade_button.text = "Launch invasion\nArmy: %s troops\nSupplies: %s" % [NumFormat.fmt(Game.army_size()), NumFormat.cost(c["cost"])]
+		_invade_button.disabled = not Game.can_invade(c["id"])
 
 	for item in _commission_buttons:
 		var maker_id: String = item["maker"]
@@ -445,6 +464,56 @@ func _rebuild_crafting() -> void:
 		secret.text = "??? Some items work better together..."
 		secret.modulate = Color(1, 1, 1, 0.5)
 		_craft_list.add_child(secret)
+
+
+func _rebuild_invasions() -> void:
+	_clear(_invasion_list)
+	_invade_button = null
+	if not Game.invasion_unlocked():
+		_add_wrapped(_invasion_list, "Research Warfare in the Discoveries tab to invade other countries.", Color(1, 1, 1, 0.6))
+		return
+	var c := Game.next_country()
+	if c.is_empty():
+		_add_wrapped(_invasion_list, "You have conquered every known country. For now.", GOOD_COLOR)
+	else:
+		var header := Label.new()
+		header.text = "Next target: %s" % c["name"]
+		header.add_theme_font_size_override("font_size", 18)
+		_invasion_list.add_child(header)
+		_add_wrapped(_invasion_list, c["desc"], Color.WHITE)
+		_add_wrapped(_invasion_list, "Enemy nations: %d" % c["enemies"].size(), Color.WHITE)
+		_add_wrapped(_invasion_list, "Reward: %s" % c["reward_desc"], GOOD_COLOR)
+		_add_wrapped(_invasion_list, "Loot: %s" % NumFormat.cost(c["loot"]), GOOD_COLOR)
+		if not Game.is_unlocked(c["requires"]):
+			_add_wrapped(_invasion_list, "Unlock %s first." % GameData.resource_name(c["requires"]), BAD_COLOR)
+		_add_wrapped(_invasion_list, "Warriors add troops to your army. Leaving mid-invasion counts as a retreat.", Color(1, 1, 1, 0.6))
+		var country_id: String = c["id"]
+		_invade_button = Button.new()
+		_invade_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		_invade_button.pressed.connect(func():
+			if Game.start_invasion(country_id):
+				get_tree().change_scene_to_file("res://scenes/invasion.tscn"))
+		_invasion_list.add_child(_invade_button)
+	var done: Array = []
+	for country in GameData.COUNTRIES:
+		if Game.conquered.has(country["id"]):
+			done.append(country)
+	if not done.is_empty():
+		_invasion_list.add_child(HSeparator.new())
+		var conquered_header := Label.new()
+		conquered_header.text = "Conquered"
+		conquered_header.add_theme_font_size_override("font_size", 18)
+		_invasion_list.add_child(conquered_header)
+		for country in done:
+			_add_wrapped(_invasion_list, "%s: %s" % [country["name"], country["reward_desc"]], GOOD_COLOR)
+
+
+func _add_wrapped(list: VBoxContainer, text: String, color: Color) -> void:
+	var label := Label.new()
+	label.text = text
+	label.modulate = color
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	list.add_child(label)
 
 
 func _on_message(text: String) -> void:
