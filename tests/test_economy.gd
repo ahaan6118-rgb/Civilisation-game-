@@ -17,6 +17,13 @@ func _check(cond: bool, what: String) -> void:
 		print("  FAIL ", what)
 
 
+func _consumable_count() -> int:
+	var n := 0
+	for id in _game.consumables:
+		n += _game.consumables[id]
+	return n
+
+
 func _sim(seconds: float, offline := false) -> void:
 	var t := 0.0
 	while t < seconds - 0.0001:
@@ -136,7 +143,7 @@ func _run() -> void:
 	_check(not _game.start_commission("artisan"), "one commission per artisan")
 	_game.amounts["food"] = 1e5
 	_sim(61.0)
-	_check(_game.total_items() == 1 and _game.crafts.is_empty(), "commission finished into one item")
+	_check(_game.total_items() + _consumable_count() == 1 and _game.crafts.is_empty(), "commission finished into one item")
 	_game.items = {"woven_basket": 2, "flint_knife": 1}
 	_game.rebuild_modifiers()
 	_check(_game.active_synergies().size() == 1, "Hunter-Gatherer synergy active")
@@ -156,7 +163,24 @@ func _run() -> void:
 	_game.from_dict(item_save)
 	_check(_game.items.get("woven_basket", 0) == 2 and _game.crafts.size() == 1, "items and commissions saved")
 	_game.apply_offline(120.0)
-	_check(_game.total_items() >= 4, "commissions finish offline")
+	_check(_game.total_items() + _consumable_count() >= 4, "commissions finish offline")
+
+	print("consumables")
+	_game.reset()
+	_game._grant_item("rallying_horn")
+	_game._grant_item("rallying_horn")
+	_check(_game.consumables.get("rallying_horn", 0) == 2 and _game.total_items() == 0, "consumables stored apart from relics")
+	_check(_game.use_consumable("rallying_horn").size() == 1 and _game.consumables["rallying_horn"] == 1, "using one removes one")
+	_check(_game.use_consumable("fire_pots").is_empty(), "cannot use what you don't own")
+	var smith_only := true
+	for i in 300:
+		if GameData.find("item", _game.roll_item("blacksmith"))["maker"] != "blacksmith":
+			smith_only = false
+	_check(smith_only, "blacksmith only rolls blacksmith items")
+	var cons_save: Dictionary = JSON.parse_string(JSON.stringify(_game.to_dict()))
+	_game.reset()
+	_game.from_dict(cons_save)
+	_check(_game.consumables.get("rallying_horn", 0) == 1, "consumables saved")
 
 	print("invasion map")
 	var m := InvasionMap.new()
@@ -203,6 +227,19 @@ func _run() -> void:
 	for i in 10:
 		await process_frame
 	_check(invasion_screen.map.nations.size() == 2, "invasion screen builds the map")
+	_game.consumables = {"rallying_horn": 1, "sling_stones": 1, "fire_pots": 1}
+	var you: Dictionary = invasion_screen.map.nations[0]
+	var troops_before: float = you["troops"]
+	invasion_screen.use_item("rallying_horn")
+	_check(absf(you["troops"] - troops_before - invasion_screen.map.max_troops(0) * 0.3) < 1.0, "Rallying Horn adds 30% of max troops")
+	var enemy_before: float = invasion_screen.map.nations[1]["troops"]
+	invasion_screen.use_item("fire_pots")
+	_check(is_equal_approx(invasion_screen.map.nations[1]["troops"], enemy_before * 0.7), "Fire Pots burn 30% of enemy troops")
+	invasion_screen.use_item("sling_stones")
+	_check(is_equal_approx(you["attack_mult"], 1.5), "Sling Stones buff attack")
+	invasion_screen._update_buffs(21.0)
+	_check(is_equal_approx(you["attack_mult"], 1.0), "buff wears off")
+	_check(_game.consumables.is_empty(), "all three used up")
 	invasion_screen.queue_free()
 	var wood_before: float = _game.amounts["wood"]
 	_game.finish_invasion(true)

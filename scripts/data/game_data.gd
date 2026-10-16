@@ -91,6 +91,8 @@ const BUILDINGS := [
 		"desc": "+20 max population.", "effects": [{"key": "pop_cap", "add": 20}]},
 	{"id": "artisan", "name": "Artisan", "requires": "clay", "cost": {"wood": 100.0, "stone": 2000.0, "clay": 300.0}, "scale": 1.5,
 		"desc": "Crafts random items. Each Artisan works on one commission at a time.", "effects": []},
+	{"id": "blacksmith", "name": "Blacksmith", "requires": "bronze", "cost": {"stone": 1e6, "copper": 2e5, "bronze": 5e4}, "scale": 1.5,
+		"desc": "Forges random army items. Each Blacksmith works on one commission at a time.", "effects": []},
 	{"id": "townhouse", "name": "Townhouse", "requires": "iron", "cost": {"iron": 5e4, "bronze": 2e4}, "scale": 1.15,
 		"desc": "+60 max population.", "effects": [{"key": "pop_cap", "add": 60}]},
 	{"id": "apartment", "name": "Apartment", "requires": "steel", "cost": {"steel": 1e6}, "scale": 1.15,
@@ -294,9 +296,15 @@ const RARITIES := {
 const MAKERS := [
 	{"id": "artisan", "name": "Artisan", "building": "artisan", "time": 60.0,
 		"cost": {"wood": 500.0, "stone": 1000.0, "clay": 200.0}, "cost_scale": 1.12},
+	{"id": "blacksmith", "name": "Blacksmith", "building": "blacksmith", "time": 90.0,
+		"cost": {"copper": 5e4, "bronze": 2e4}, "cost_scale": 1.12},
 ]
 
-# Items stack: every copy applies its effects again.
+# Relics (the default kind) stay forever and stack: every copy applies its effects again.
+# Consumables ("kind": "consumable") are stored and used once during an invasion. Their "use" list holds:
+#   {"type": "troops", "pct": p}            add p * your max troops
+#   {"type": "enemy_troops", "pct": p}      every enemy loses p of its troops
+#   {"type": "buff", "stat": s, "mult": m, "time": t}   multiply attack_mult or regen_mult by m for t seconds
 const ITEMS := [
 	{"id": "lucky_pebble", "name": "Lucky Pebble", "maker": "artisan", "rarity": "common",
 		"desc": "Clicking gathers 1.5x.", "flavor": "",
@@ -334,6 +342,48 @@ const ITEMS := [
 	{"id": "the_first_brick", "name": "The First Brick", "maker": "artisan", "rarity": "legendary",
 		"desc": "+25 max population, Clay Diggers 3x.", "flavor": "",
 		"effects": [{"key": "pop_cap", "add": 25}, {"key": "job:clay_digger", "mult": 3.0}]},
+
+	# artisan consumables
+	{"id": "rallying_horn", "name": "Rallying Horn", "maker": "artisan", "rarity": "common", "kind": "consumable",
+		"desc": "Invasion: instantly gain 30% of your max troops.", "flavor": "",
+		"use": [{"type": "troops", "pct": 0.3}]},
+	{"id": "sling_stones", "name": "Sling Stones", "maker": "artisan", "rarity": "common", "kind": "consumable",
+		"desc": "Invasion: conquer land 1.5x cheaper for 20s.", "flavor": "",
+		"use": [{"type": "buff", "stat": "attack_mult", "mult": 1.5, "time": 20.0}]},
+	{"id": "war_paint", "name": "War Paint", "maker": "artisan", "rarity": "uncommon", "kind": "consumable",
+		"desc": "Invasion: troops regenerate 3x faster for 30s.", "flavor": "",
+		"use": [{"type": "buff", "stat": "regen_mult", "mult": 3.0, "time": 30.0}]},
+	{"id": "fire_pots", "name": "Fire Pots", "maker": "artisan", "rarity": "rare", "kind": "consumable",
+		"desc": "Invasion: every enemy loses 30% of its troops.", "flavor": "",
+		"use": [{"type": "enemy_troops", "pct": 0.3}]},
+
+	# blacksmith relics
+	{"id": "bronze_shield", "name": "Bronze Shield", "maker": "blacksmith", "rarity": "common",
+		"desc": "Army size and max troops 1.3x.", "flavor": "",
+		"effects": [{"key": "army:size", "mult": 1.3}]},
+	{"id": "anvil", "name": "Anvil", "maker": "blacksmith", "rarity": "common",
+		"desc": "Bronzesmiths produce 2x.", "flavor": "",
+		"effects": [{"key": "job:bronzesmith", "mult": 2.0}]},
+	{"id": "chariot", "name": "Chariot", "maker": "blacksmith", "rarity": "uncommon",
+		"desc": "Troops regenerate 1.5x faster.", "flavor": "",
+		"effects": [{"key": "army:regen", "mult": 1.5}]},
+	{"id": "war_banner", "name": "War Banner", "maker": "blacksmith", "rarity": "rare",
+		"desc": "Troops conquer land 1.5x cheaper, +10% all production.", "flavor": "",
+		"effects": [{"key": "army:attack", "mult": 1.5}, {"key": "job:all", "mult": 1.1}]},
+	{"id": "sword_of_the_first_king", "name": "Sword of the First King", "maker": "blacksmith", "rarity": "legendary",
+		"desc": "Troops conquer land 2x cheaper, army size 1.5x.", "flavor": "",
+		"effects": [{"key": "army:attack", "mult": 2.0}, {"key": "army:size", "mult": 1.5}]},
+
+	# blacksmith consumables
+	{"id": "battering_ram", "name": "Battering Ram", "maker": "blacksmith", "rarity": "common", "kind": "consumable",
+		"desc": "Invasion: conquer land 3x cheaper for 15s.", "flavor": "",
+		"use": [{"type": "buff", "stat": "attack_mult", "mult": 3.0, "time": 15.0}]},
+	{"id": "mercenary_contract", "name": "Mercenary Contract", "maker": "blacksmith", "rarity": "uncommon", "kind": "consumable",
+		"desc": "Invasion: instantly gain 100% of your max troops.", "flavor": "",
+		"use": [{"type": "troops", "pct": 1.0}]},
+	{"id": "plague_rats", "name": "Plague Rats", "maker": "blacksmith", "rarity": "rare", "kind": "consumable",
+		"desc": "Invasion: every enemy loses 60% of its troops.", "flavor": "",
+		"use": [{"type": "enemy_troops", "pct": 0.6}]},
 ]
 
 # Owning every listed item activates the synergy once.
@@ -352,6 +402,12 @@ const SYNERGIES := [
 		"effects": [{"key": "spoil:food", "mult": 0.7}, {"key": "food_use", "mult": 0.9}]},
 	{"id": "god_complex", "name": "God Complex", "items": ["idol_of_plenty", "the_first_brick"],
 		"desc": "All workers produce 2x.", "effects": [{"key": "job:all", "mult": 2.0}]},
+	{"id": "phalanx", "name": "Phalanx", "items": ["bronze_shield", "war_banner"],
+		"desc": "Army size 1.5x, troops regenerate 1.25x faster.",
+		"effects": [{"key": "army:size", "mult": 1.5}, {"key": "army:regen", "mult": 1.25}]},
+	{"id": "forge_of_kings", "name": "Forge of Kings", "items": ["anvil", "sword_of_the_first_king"],
+		"desc": "All workers produce 2x, troops conquer land 1.5x cheaper.",
+		"effects": [{"key": "job:all", "mult": 2.0}, {"key": "army:attack", "mult": 1.5}]},
 ]
 
 # --- invasions ------------------------------------------------------------------

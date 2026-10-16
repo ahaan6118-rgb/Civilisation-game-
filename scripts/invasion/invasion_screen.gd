@@ -23,6 +23,11 @@ var _confirm_retreat: ConfirmationDialog
 var _accum := 0.0
 var _redraw_accum := 0.0
 var _finished := false
+var _hotbar: HBoxContainer
+var _buff_label: Label
+var _base_stats := {}
+# buff: {name, stat, mult, remaining}
+var _buffs: Array = []
 
 
 func _ready() -> void:
@@ -39,6 +44,7 @@ func _ready() -> void:
 		"attack_mult": Game.mult("army:attack"),
 	}
 	map.generate(MAP_WIDTH, MAP_HEIGHT, randi(), player, _country["enemies"])
+	_base_stats = {"attack_mult": player["attack_mult"], "regen_mult": player["regen_mult"]}
 	_build_ui()
 	_refresh_hud()
 
@@ -97,6 +103,16 @@ func _build_ui() -> void:
 	_nations_label.custom_minimum_size.x = 200
 	middle.add_child(_nations_label)
 
+	var items_row := HBoxContainer.new()
+	root.add_child(items_row)
+	_hotbar = HBoxContainer.new()
+	_hotbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	items_row.add_child(_hotbar)
+	_buff_label = Label.new()
+	_buff_label.modulate = Color(0.6, 1.0, 0.6)
+	items_row.add_child(_buff_label)
+	_rebuild_hotbar()
+
 	var bottom := HBoxContainer.new()
 	root.add_child(bottom)
 	_hint_label = Label.new()
@@ -130,6 +146,7 @@ func _build_ui() -> void:
 func _process(delta: float) -> void:
 	if _finished or _country.is_empty():
 		return
+	_update_buffs(delta)
 	_accum += delta
 	while _accum >= TICK:
 		map.tick(TICK)
@@ -148,6 +165,75 @@ func _process(delta: float) -> void:
 		_result_panel.visible = true
 		_result_panel.reset_size()
 		_result_panel.position = (size - _result_panel.size) / 2.0
+
+
+func _rebuild_hotbar() -> void:
+	for child in _hotbar.get_children():
+		_hotbar.remove_child(child)
+		child.queue_free()
+	var title := Label.new()
+	title.text = "Items:"
+	_hotbar.add_child(title)
+	if Game.consumables.is_empty():
+		var none := Label.new()
+		none.text = "No consumables. Artisans and Blacksmiths can craft them."
+		none.modulate = Color(1, 1, 1, 0.6)
+		_hotbar.add_child(none)
+		return
+	for it in GameData.ITEMS:
+		var count: int = Game.consumables.get(it["id"], 0)
+		if count <= 0:
+			continue
+		var item_id: String = it["id"]
+		var button := Button.new()
+		button.text = "%s x%d" % [it["name"], count]
+		button.icon = Assets.texture(it["name"])
+		button.add_theme_constant_override("icon_max_width", 24)
+		button.tooltip_text = it["desc"]
+		button.pressed.connect(func(): use_item(item_id))
+		_hotbar.add_child(button)
+
+
+func use_item(item_id: String) -> void:
+	if _finished:
+		return
+	var effects := Game.use_consumable(item_id)
+	if effects.is_empty():
+		return
+	var it := GameData.find("item", item_id)
+	for e in effects:
+		match e["type"]:
+			"troops":
+				map.nations[InvasionMap.PLAYER]["troops"] += map.max_troops(InvasionMap.PLAYER) * e["pct"]
+			"enemy_troops":
+				for idx in range(1, map.nations.size()):
+					map.nations[idx]["troops"] *= 1.0 - e["pct"]
+			"buff":
+				_buffs.append({"name": it["name"], "stat": e["stat"], "mult": e["mult"], "remaining": e["time"]})
+	_apply_buffs()
+	_hint_label.text = "Used %s!" % it["name"]
+	_rebuild_hotbar()
+	_refresh_hud()
+
+
+func _update_buffs(delta: float) -> void:
+	if _buffs.is_empty():
+		return
+	for b in _buffs:
+		b["remaining"] -= delta
+	_buffs = _buffs.filter(func(b): return b["remaining"] > 0.0)
+	_apply_buffs()
+
+
+func _apply_buffs() -> void:
+	var you: Dictionary = map.nations[InvasionMap.PLAYER]
+	for stat in _base_stats:
+		you[stat] = _base_stats[stat]
+	var parts: PackedStringArray = []
+	for b in _buffs:
+		you[b["stat"]] *= b["mult"]
+		parts.append("%s %ds" % [b["name"], ceili(b["remaining"])])
+	_buff_label.text = "  ".join(parts)
 
 
 func _end(won: bool) -> void:

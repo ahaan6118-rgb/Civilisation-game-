@@ -28,6 +28,7 @@ var lifetime: Dictionary = {}
 var clicks: int = 0
 var revealed: Dictionary = {}
 var items: Dictionary = {}
+var consumables: Dictionary = {}
 var crafts: Array = []
 var crafted_count: Dictionary = {}
 var conquered: Dictionary = {}
@@ -57,6 +58,7 @@ func reset() -> void:
 	clicks = 0
 	revealed.clear()
 	items.clear()
+	consumables.clear()
 	crafts.clear()
 	crafted_count.clear()
 	conquered.clear()
@@ -193,7 +195,7 @@ func rebuild_modifiers() -> void:
 	for it in GameData.ITEMS:
 		var owned: int = items.get(it["id"], 0)
 		if owned > 0:
-			for e in it["effects"]:
+			for e in it.get("effects", []):
 				_apply_effect(e, owned)
 	for syn in active_synergies():
 		for e in syn["effects"]:
@@ -477,16 +479,36 @@ func roll_item(maker_id: String) -> String:
 	return pool[-1][0]
 
 
+func is_consumable(item_id: String) -> bool:
+	return GameData.find("item", item_id).get("kind", "relic") == "consumable"
+
+
 func _grant_item(item_id: String) -> void:
-	var before := active_synergies()
-	items[item_id] = items.get(item_id, 0) + 1
 	var it := GameData.find("item", item_id)
 	var rarity: String = GameData.RARITIES[it["rarity"]]["name"]
+	if is_consumable(item_id):
+		consumables[item_id] = consumables.get(item_id, 0) + 1
+		post("Crafted: %s (%s consumable) x%d" % [it["name"], rarity, consumables[item_id]])
+		structure_changed.emit()
+		return
+	var before := active_synergies()
+	items[item_id] = items.get(item_id, 0) + 1
 	post("Crafted: %s (%s)%s" % [it["name"], rarity, "" if items[item_id] == 1 else " x%d" % items[item_id]])
 	_changed()
 	for syn in active_synergies():
 		if not before.has(syn):
 			post("SYNERGY! %s: %s" % [syn["name"], syn["desc"]])
+
+
+# Removes one consumable and returns its "use" effects, or [] if none are owned.
+func use_consumable(item_id: String) -> Array:
+	if consumables.get(item_id, 0) <= 0:
+		return []
+	consumables[item_id] -= 1
+	if consumables[item_id] == 0:
+		consumables.erase(item_id)
+	structure_changed.emit()
+	return GameData.find("item", item_id)["use"]
 
 
 func total_items() -> int:
@@ -606,6 +628,7 @@ func to_dict() -> Dictionary:
 		"crafts": crafts.duplicate(true),
 		"crafted_count": crafted_count.duplicate(),
 		"conquered": conquered.keys(),
+		"consumables": consumables.duplicate(),
 	}
 
 
@@ -636,10 +659,14 @@ func from_dict(data: Dictionary) -> void:
 		revealed[id] = true
 	var saved_items: Dictionary = data.get("items", {})
 	for id in saved_items:
-		if not GameData.find("item", id).is_empty():
+		if not GameData.find("item", id).is_empty() and not is_consumable(id):
 			items[id] = int(saved_items[id])
 	for c in data.get("crafts", []):
 		crafts.append({"maker": c["maker"], "remaining": float(c["remaining"]), "total": float(c["total"])})
+	var saved_consumables: Dictionary = data.get("consumables", {})
+	for id in saved_consumables:
+		if is_consumable(id):
+			consumables[id] = int(saved_consumables[id])
 	for id in data.get("conquered", []):
 		conquered[id] = true
 	var saved_crafted: Dictionary = data.get("crafted_count", {})

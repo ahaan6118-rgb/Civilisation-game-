@@ -427,7 +427,7 @@ func _rebuild_crafting() -> void:
 	_craft_list.add_child(HSeparator.new())
 	var collection := Label.new()
 	collection.add_theme_font_size_override("font_size", 18)
-	collection.text = "Collection (%d items)" % Game.total_items()
+	collection.text = "Relics (%d)" % Game.total_items()
 	_craft_list.add_child(collection)
 	for it in GameData.ITEMS:
 		var owned: int = Game.items.get(it["id"], 0)
@@ -445,6 +445,28 @@ func _rebuild_crafting() -> void:
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.mouse_filter = Control.MOUSE_FILTER_PASS
+		row.add_child(label)
+		_craft_list.add_child(row)
+
+	var supplies := Label.new()
+	supplies.add_theme_font_size_override("font_size", 18)
+	supplies.text = "Consumables (used during invasions)"
+	_craft_list.add_child(supplies)
+	if Game.consumables.is_empty():
+		_add_wrapped(_craft_list, "None yet.", Color(1, 1, 1, 0.5))
+	for it in GameData.ITEMS:
+		var count: int = Game.consumables.get(it["id"], 0)
+		if count == 0:
+			continue
+		var row := HBoxContainer.new()
+		var icon := _icon(it["name"])
+		if icon:
+			row.add_child(icon)
+		var label := Label.new()
+		label.text = "%s x%d: %s" % [it["name"], count, it["desc"]]
+		label.modulate = GameData.RARITIES[it["rarity"]]["color"]
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(label)
 		_craft_list.add_child(row)
 
