@@ -287,7 +287,7 @@ func _add_shop_button(list: VBoxContainer, kind: String, entry: Dictionary) -> v
 	button.expand_icon = false
 	button.add_theme_constant_override("icon_max_width", 32)
 	button.tooltip_text = entry["desc"]
-	if entry.has("flavor"):
+	if entry.get("flavor", "") != "":
 		button.tooltip_text += "\n\"%s\"" % entry["flavor"]
 	var id: String = entry["id"]
 	match kind:
@@ -362,7 +362,7 @@ func _refresh() -> void:
 		else:
 			cost = entry["cost"]
 		var text := "%s\n%s" % [title, entry["desc"]]
-		if entry.has("flavor"):
+		if entry.get("flavor", "") != "":
 			text += "\n\"%s\"" % entry["flavor"]
 		button.text = text + "\nCost: " + NumFormat.cost(cost)
 		button.disabled = not Game.can_afford(cost)
@@ -389,7 +389,7 @@ func _rebuild_crafting() -> void:
 		var button := Button.new()
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.tooltip_text = "Pay up and get a random item. Rarer items are rarer, obviously."
+		button.tooltip_text = "Pay the cost to get a random item."
 		button.pressed.connect(func(): Game.start_commission(maker_id))
 		_craft_list.add_child(button)
 		_commission_buttons.append({"button": button, "maker": maker_id})
@@ -415,7 +415,8 @@ func _rebuild_crafting() -> void:
 		if owned == 0:
 			continue
 		var row := HBoxContainer.new()
-		row.tooltip_text = "\"%s\"" % it["flavor"]
+		if it.get("flavor", "") != "":
+			row.tooltip_text = "\"%s\"" % it["flavor"]
 		var icon := _icon(it["name"])
 		if icon:
 			row.add_child(icon)
