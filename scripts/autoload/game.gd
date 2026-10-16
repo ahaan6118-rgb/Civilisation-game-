@@ -196,7 +196,7 @@ func rebuild_modifiers() -> void:
 		var owned: int = items.get(it["id"], 0)
 		if owned > 0:
 			for e in it.get("effects", []):
-				_apply_effect(e, owned)
+				_apply_effect(e, owned, true)
 	for syn in active_synergies():
 		for e in syn["effects"]:
 			_apply_effect(e, 1)
@@ -211,19 +211,27 @@ func _changed() -> void:
 	structure_changed.emit()
 
 
-func _apply_effect(effect: Dictionary, count: int) -> void:
+# linear: duplicate copies add their bonus instead of compounding (1.3x twice = 1.6x),
+# and reductions shrink with diminishing returns so they never reach zero.
+func _apply_effect(effect: Dictionary, count: int, linear := false) -> void:
 	var key: String = effect["key"]
 	var m: Dictionary = _mods.get(key, {"add": 0.0, "mult": 1.0})
 	if effect.has("add"):
 		m["add"] += float(effect["add"]) * count
 	if effect.has("mult"):
-		m["mult"] *= pow(float(effect["mult"]), count)
+		var factor := float(effect["mult"])
+		if not linear:
+			m["mult"] *= pow(factor, count)
+		elif factor >= 1.0:
+			m["mult"] *= 1.0 + (factor - 1.0) * count
+		else:
+			m["mult"] /= 1.0 + (1.0 / factor - 1.0) * count
 	if effect.has("per"):
 		m["mult"] *= pow(1.0 + float(effect["pct"]) * count_of(effect["per"]), count)
 	_mods[key] = m
 
 
-# Counters used by "per" effects and unlock conditions: job:<id>, building:<id>, population, items.
+# Counters used by "per" effects and unlock conditions: job:<id>, building:<id>, item:<id>, population, items.
 func count_of(counter: String) -> int:
 	if counter == "population":
 		return population
@@ -234,6 +242,8 @@ func count_of(counter: String) -> int:
 		return jobs.get(parts[1], 0)
 	if parts[0] == "building":
 		return buildings.get(parts[1], 0)
+	if parts[0] == "item":
+		return items.get(parts[1], 0)
 	return 0
 
 

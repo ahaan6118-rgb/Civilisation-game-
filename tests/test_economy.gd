@@ -147,7 +147,15 @@ func _run() -> void:
 	_game.items = {"woven_basket": 2, "flint_knife": 1}
 	_game.rebuild_modifiers()
 	_check(_game.active_synergies().size() == 1, "Hunter-Gatherer synergy active")
-	_check(is_equal_approx(_game.job_multiplier("gatherer"), 1.3 * 1.3 * 1.5), "stacked baskets + synergy")
+	_check(is_equal_approx(_game.job_multiplier("gatherer"), 1.6 * 3.0), "duplicates add linearly, synergy scales per basket")
+	_game.items = {"painted_pot": 3}
+	_game.rebuild_modifiers()
+	_check(is_equal_approx(_game.mult("spoil:food"), 1.0 / (1.0 + (1.0 / 0.85 - 1.0) * 3.0)), "stacked reductions have diminishing returns")
+	_game.items = {"tusk_necklace": 1, "painted_pot": 1, "woven_basket": 1}
+	_game.rebuild_modifiers()
+	_check(_game.mult("spoil:food") == 0.0, "The Feast stops food spoiling")
+	_game.items = {"woven_basket": 2, "flint_knife": 1}
+	_game.rebuild_modifiers()
 	var counts := {}
 	for i in 2000:
 		var id: String = _game.roll_item("artisan")

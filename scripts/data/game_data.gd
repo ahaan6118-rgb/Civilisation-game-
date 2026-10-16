@@ -300,7 +300,9 @@ const MAKERS := [
 		"cost": {"copper": 5e4, "bronze": 2e4}, "cost_scale": 1.12},
 ]
 
-# Relics (the default kind) stay forever and stack: every copy applies its effects again.
+# Balance rule: single items stay modest (duplicates add up linearly, see Game._apply_effect).
+# Synergies are where the game is allowed to break, like item combos in Isaac.
+# Relics (the default kind) stay forever and stack: every copy adds its bonus again.
 # Consumables ("kind": "consumable") are stored and used once during an invasion. Their "use" list holds:
 #   {"type": "troops", "pct": p}            add p * your max troops
 #   {"type": "enemy_troops", "pct": p}      every enemy loses p of its troops
@@ -337,11 +339,11 @@ const ITEMS := [
 		"desc": "People eat 20% less.", "flavor": "",
 		"effects": [{"key": "food_use", "mult": 0.8}]},
 	{"id": "idol_of_plenty", "name": "Idol of Plenty", "maker": "artisan", "rarity": "legendary",
-		"desc": "All workers produce 1.5x.", "flavor": "",
-		"effects": [{"key": "job:all", "mult": 1.5}]},
+		"desc": "All workers produce 1.3x.", "flavor": "",
+		"effects": [{"key": "job:all", "mult": 1.3}]},
 	{"id": "the_first_brick", "name": "The First Brick", "maker": "artisan", "rarity": "legendary",
-		"desc": "+25 max population, Clay Diggers 3x.", "flavor": "",
-		"effects": [{"key": "pop_cap", "add": 25}, {"key": "job:clay_digger", "mult": 3.0}]},
+		"desc": "+15 max population, Clay Diggers 2x.", "flavor": "",
+		"effects": [{"key": "pop_cap", "add": 15}, {"key": "job:clay_digger", "mult": 2.0}]},
 
 	# artisan consumables
 	{"id": "rallying_horn", "name": "Rallying Horn", "maker": "artisan", "rarity": "common", "kind": "consumable",
@@ -371,8 +373,8 @@ const ITEMS := [
 		"desc": "Troops conquer land 1.5x cheaper, +10% all production.", "flavor": "",
 		"effects": [{"key": "army:attack", "mult": 1.5}, {"key": "job:all", "mult": 1.1}]},
 	{"id": "sword_of_the_first_king", "name": "Sword of the First King", "maker": "blacksmith", "rarity": "legendary",
-		"desc": "Troops conquer land 2x cheaper, army size 1.5x.", "flavor": "",
-		"effects": [{"key": "army:attack", "mult": 2.0}, {"key": "army:size", "mult": 1.5}]},
+		"desc": "Troops conquer land 1.5x cheaper, army size 1.2x.", "flavor": "",
+		"effects": [{"key": "army:attack", "mult": 1.5}, {"key": "army:size", "mult": 1.2}]},
 
 	# blacksmith consumables
 	{"id": "battering_ram", "name": "Battering Ram", "maker": "blacksmith", "rarity": "common", "kind": "consumable",
@@ -389,25 +391,28 @@ const ITEMS := [
 # Owning every listed item activates the synergy once.
 const SYNERGIES := [
 	{"id": "hunter_gatherer", "name": "Hunter-Gatherer", "items": ["woven_basket", "flint_knife"],
-		"desc": "Gatherers produce 1.5x.", "effects": [{"key": "job:gatherer", "mult": 1.5}]},
+		"desc": "Gatherers +100% per Woven Basket, Woodcutters +100% per Flint Knife.",
+		"effects": [{"key": "job:gatherer", "per": "item:woven_basket", "pct": 1.0}, {"key": "job:woodcutter", "per": "item:flint_knife", "pct": 1.0}]},
 	{"id": "superstitious", "name": "Superstitious", "items": ["lucky_pebble", "clay_figurine"],
-		"desc": "Clicking gathers 2x.", "effects": [{"key": "click", "mult": 2.0}]},
+		"desc": "Clicking gathers 5x and also gives 5% of production per second.",
+		"effects": [{"key": "click", "mult": 5.0}, {"key": "click_cps", "add": 0.05}]},
 	{"id": "potters_wheel", "name": "Potter's Wheel", "items": ["stone_wheel", "painted_pot"],
-		"desc": "Clay Diggers produce 2x.", "effects": [{"key": "job:clay_digger", "mult": 2.0}]},
+		"desc": "Clay Diggers and Quarriers produce 10x.",
+		"effects": [{"key": "job:clay_digger", "mult": 10.0}, {"key": "job:quarrier", "mult": 10.0}]},
 	{"id": "shaman", "name": "Shaman", "items": ["carved_totem", "bone_flute", "obsidian_mirror"],
-		"desc": "All workers produce 1.25x, rare items 25% more likely.",
-		"effects": [{"key": "job:all", "mult": 1.25}, {"key": "luck", "mult": 1.25}]},
+		"desc": "All workers +25% per relic owned, rare items 2x more likely.",
+		"effects": [{"key": "job:all", "per": "items", "pct": 0.25}, {"key": "luck", "mult": 2.0}]},
 	{"id": "feast", "name": "The Feast", "items": ["tusk_necklace", "painted_pot", "woven_basket"],
-		"desc": "Food spoils 30% slower, people eat 10% less.",
-		"effects": [{"key": "spoil:food", "mult": 0.7}, {"key": "food_use", "mult": 0.9}]},
+		"desc": "Food never spoils and people eat half as much.",
+		"effects": [{"key": "spoil:food", "mult": 0.0}, {"key": "food_use", "mult": 0.5}]},
 	{"id": "god_complex", "name": "God Complex", "items": ["idol_of_plenty", "the_first_brick"],
-		"desc": "All workers produce 2x.", "effects": [{"key": "job:all", "mult": 2.0}]},
+		"desc": "All workers produce 10x.", "effects": [{"key": "job:all", "mult": 10.0}]},
 	{"id": "phalanx", "name": "Phalanx", "items": ["bronze_shield", "war_banner"],
-		"desc": "Army size 1.5x, troops regenerate 1.25x faster.",
-		"effects": [{"key": "army:size", "mult": 1.5}, {"key": "army:regen", "mult": 1.25}]},
+		"desc": "Army size 3x, troops regenerate 2x faster.",
+		"effects": [{"key": "army:size", "mult": 3.0}, {"key": "army:regen", "mult": 2.0}]},
 	{"id": "forge_of_kings", "name": "Forge of Kings", "items": ["anvil", "sword_of_the_first_king"],
-		"desc": "All workers produce 2x, troops conquer land 1.5x cheaper.",
-		"effects": [{"key": "job:all", "mult": 2.0}, {"key": "army:attack", "mult": 1.5}]},
+		"desc": "All workers produce 5x, troops conquer land 4x cheaper.",
+		"effects": [{"key": "job:all", "mult": 5.0}, {"key": "army:attack", "mult": 4.0}]},
 ]
 
 # --- invasions ------------------------------------------------------------------
