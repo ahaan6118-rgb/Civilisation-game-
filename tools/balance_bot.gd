@@ -163,27 +163,31 @@ func _assign_jobs() -> void:
 	game.rebuild_modifiers()
 
 
-# Puts `n` workers on a job and enough on its input jobs to keep it supplied.
+# Puts `n` workers on a job and enough on its whole supply chain to keep it running.
 func _staff(plan: Dictionary, job: Dictionary, n: int) -> void:
 	if job.is_empty() or n <= 0:
 		return
-	var consumes: Dictionary = job.get("consumes", {})
-	if consumes.is_empty():
-		plan[job["id"]] = plan.get(job["id"], 0) + n
-		return
-	# Split n between the job and its suppliers in proportion to what they need.
-	var weights := {job["id"]: 1.0}
-	for res in consumes:
-		var supplier := _job_for(res)
-		if supplier.is_empty():
-			continue
-		var per: float = supplier["produces"][res] * game.job_multiplier(supplier["id"])
-		weights[supplier["id"]] = weights.get(supplier["id"], 0.0) + consumes[res] / per
+	var weights := {}
+	_chain_weights(job, 1.0, weights, 0)
 	var total := 0.0
 	for id in weights:
 		total += weights[id]
 	for id in weights:
 		plan[id] = plan.get(id, 0) + int(n * weights[id] / total)
+
+
+# Workers needed per worker of `job`, for it and (recursively) every input it consumes.
+func _chain_weights(job: Dictionary, amount: float, weights: Dictionary, depth: int) -> void:
+	weights[job["id"]] = weights.get(job["id"], 0.0) + amount
+	if depth > 4:
+		return
+	var consumes: Dictionary = job.get("consumes", {})
+	for res in consumes:
+		var supplier := _job_for(res)
+		if supplier.is_empty() or supplier["id"] == job["id"]:
+			continue
+		var per: float = supplier["produces"][res] * maxf(game.job_multiplier(supplier["id"]), 1e-6)
+		_chain_weights(supplier, amount * consumes[res] * 1.2 / per, weights, depth + 1)
 
 
 func _total(plan: Dictionary) -> int:
@@ -204,5 +208,10 @@ func _report(unlocked_at: Dictionary, t: float) -> void:
 			prev = at
 		else:
 			print("  %-12s  not reached" % r["name"])
+	var next := _next_tech()
+	if not next.is_empty():
+		for res in next["cost"]:
+			print("next: %s needs %s %s; have %s, making %s/s" % [next["name"], NumFormat.fmt(next["cost"][res]), res,
+				NumFormat.fmt(game.amounts[res]), NumFormat.fmt(game.production_per_second(res))])
 	print("simulated %s, population %d, items %d, upgrades %d, IQ %.0f, morale %.0f, health %.0f, deaths %d, legacy if reborn %d" % [
 		NumFormat.duration(t), game.population, game.total_items(), game.upgrades.size(), game.iq, game.morale, game.health, game.run_deaths, game.legacy_gain()])

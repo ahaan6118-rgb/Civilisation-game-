@@ -44,13 +44,13 @@ const TECHS := [
 		"desc": "Steel rigs reach oil. Unlocks Oil."},
 	{"id": "electrification", "name": "Electrification", "requires": "drilling", "unlocks": "electricity", "cost": {"oil": 6.09e+16},
 		"desc": "Generators and wires. Unlocks Electricity."},
-	{"id": "semiconductors", "name": "Semiconductors", "requires": "electrification", "unlocks": "silicon", "cost": {"electricity": 4.01e+15},
+	{"id": "semiconductors", "name": "Semiconductors", "requires": "electrification", "unlocks": "silicon", "cost": {"electricity": 3.72e+15},
 		"desc": "Purify sand into chips. Unlocks Silicon."},
-	{"id": "nuclear_fission", "name": "Nuclear Fission", "requires": "semiconductors", "unlocks": "uranium", "cost": {"silicon": 1.5e+18},
+	{"id": "nuclear_fission", "name": "Nuclear Fission", "requires": "semiconductors", "unlocks": "uranium", "cost": {"silicon": 6.08e+18},
 		"desc": "Split the atom. Unlocks Uranium."},
-	{"id": "particle_physics", "name": "Particle Physics", "requires": "nuclear_fission", "unlocks": "antimatter", "cost": {"uranium": 4.12e+18},
+	{"id": "particle_physics", "name": "Particle Physics", "requires": "nuclear_fission", "unlocks": "antimatter", "cost": {"uranium": 3.81e+18},
 		"desc": "Capture antiparticles. Unlocks Antimatter."},
-	{"id": "void_theory", "name": "Void Theory", "requires": "particle_physics", "unlocks": "dark_matter", "cost": {"antimatter": 4.78e+13},
+	{"id": "void_theory", "name": "Void Theory", "requires": "particle_physics", "unlocks": "dark_matter", "cost": {"antimatter": 4.29e+07},
 		"desc": "Harvest the unseen. Unlocks Dark Matter."},
 ]
 
