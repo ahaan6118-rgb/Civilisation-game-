@@ -1,5 +1,5 @@
 # Plays the economy automatically and prints when each era unlocks.
-# Run: godot --headless --path . -s tools/balance_bot.gd -- [hours=40] [seed=1]
+# Run: godot --headless --path . -s tools/balance_bot.gd -- [hours=40] [seed=1] [noevents]
 extends SceneTree
 
 const STEP := 1.0
@@ -8,12 +8,14 @@ const THINK_EVERY := 10.0
 var game: Node
 var hours := 40.0
 var _snapshots := {}
+var _events := true
 
 
 func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
 	if args.size() > 0:
 		hours = float(args[0])
+	_events = not (args.size() > 2 and args[2] == "noevents")
 	_run.call_deferred(int(args[1]) if args.size() > 1 else 1)
 
 
@@ -22,6 +24,7 @@ func _run(seed_value: int) -> void:
 	game.set_process(false)
 	root.get_node("SaveManager").set_process(false)
 	game.reset()
+	game.events_enabled = _events
 	game._rng.seed = seed_value
 	var t := 0.0
 	var think := 0.0
@@ -38,6 +41,8 @@ func _run(seed_value: int) -> void:
 			if game.is_unlocked(r["id"]) and not unlocked_at.has(r["id"]):
 				unlocked_at[r["id"]] = t
 				_snapshots[r["id"]] = [game.population, game.run_deaths]
+				if r["id"] == "antimatter":
+					print("antimatter production when unlocked: %s/s" % NumFormat.fmt(game.production_per_second("antimatter")))
 		if game.is_unlocked("dark_matter") and t - unlocked_at["dark_matter"] > 600.0:
 			break
 	_report(unlocked_at, t)
@@ -173,7 +178,9 @@ func _staff(plan: Dictionary, job: Dictionary, n: int) -> void:
 	for id in weights:
 		total += weights[id]
 	for id in weights:
-		plan[id] = plan.get(id, 0) + int(n * weights[id] / total)
+		var share: float = n * weights[id] / total
+		# Suppliers can be so productive their share rounds to zero; always keep one on the job.
+		plan[id] = plan.get(id, 0) + (int(share) if id == job["id"] else maxi(1, ceili(share)))
 
 
 # Workers needed per worker of `job`, for it and (recursively) every input it consumes.
@@ -213,5 +220,13 @@ func _report(unlocked_at: Dictionary, t: float) -> void:
 		for res in next["cost"]:
 			print("next: %s needs %s %s; have %s, making %s/s" % [next["name"], NumFormat.fmt(next["cost"][res]), res,
 				NumFormat.fmt(game.amounts[res]), NumFormat.fmt(game.production_per_second(res))])
+		for res in ["coal", "electricity", "antimatter"]:
+			if game.is_unlocked(res):
+				print("  %s: actual %s/s, stock %s" % [res, NumFormat.fmt(game.rates.get(res, 0.0)), NumFormat.fmt(game.amounts[res])])
+		var staffed: PackedStringArray = []
+		for id in game.jobs:
+			if game.jobs[id] > 0:
+				staffed.append("%s %d" % [id, game.jobs[id]])
+		print("  jobs: " + ", ".join(staffed))
 	print("simulated %s, population %d, items %d, upgrades %d, IQ %.0f, morale %.0f, health %.0f, deaths %d, legacy if reborn %d" % [
 		NumFormat.duration(t), game.population, game.total_items(), game.upgrades.size(), game.iq, game.morale, game.health, game.run_deaths, game.legacy_gain()])
