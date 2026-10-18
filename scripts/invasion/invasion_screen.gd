@@ -6,10 +6,12 @@ const REDRAW_INTERVAL := 0.2
 const MAP_WIDTH := 96
 const MAP_HEIGHT := 54
 const PLAYER_COLOR := Color(0.25, 0.55, 1.0)
-const TERRAIN_NAMES := ["Water", "Plains", "Forest", "Mountains"]
+const ENEMY_COLORS := [Color(0.85, 0.3, 0.25), Color(0.9, 0.6, 0.2), Color(0.6, 0.35, 0.7), Color(0.35, 0.75, 0.3)]
 
 var map := InvasionMap.new()
 var _country: Dictionary
+var _defensive := false
+var _style: Dictionary
 var _view: InvasionMapView
 var _troops_label: Label
 var _nations_label: Label
@@ -31,19 +33,27 @@ var _buffs: Array = []
 
 
 func _ready() -> void:
-	_country = GameData.find("country", Game.pending_invasion)
+	_country = WarData.find_target(Game.pending_war.get("target", ""))
 	if _country.is_empty():
 		get_tree().change_scene_to_file.call_deferred(MAIN_SCENE)
 		return
+	_defensive = Game.pending_war.get("defensive", false)
+	var tier: Dictionary = WarData.TIERS[_country["tier"]]
+	_style = WarData.STYLES[tier["style"]]
+	var army := Game.army_size()
 	var player := {
 		"name": "You",
 		"color": PLAYER_COLOR,
-		"troops": Game.army_size(),
-		"troop_mult": Game.mult("army:size"),
+		# Caught off guard when defending.
+		"troops": army * (0.6 if _defensive else 1.0),
+		"troop_mult": army / WarData.BASE_ARMY,
 		"regen_mult": Game.mult("army:regen"),
 		"attack_mult": Game.mult("army:attack"),
 	}
-	map.generate(MAP_WIDTH, MAP_HEIGHT, randi(), player, _country["enemies"])
+	map.generate(MAP_WIDTH, MAP_HEIGHT, randi(), player, enemies_for(_country, tier, _defensive))
+	if _defensive:
+		for idx in range(1, map.nations.size()):
+			map.nations[idx]["troops"] = map.max_troops(idx)
 	_base_stats = {"attack_mult": player["attack_mult"], "regen_mult": player["regen_mult"]}
 	_build_ui()
 	_refresh_hud()
@@ -51,7 +61,7 @@ func _ready() -> void:
 
 func _build_ui() -> void:
 	var bg := ColorRect.new()
-	bg.color = Color(0.1, 0.12, 0.16)
+	bg.color = _style["background"]
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
@@ -67,7 +77,7 @@ func _build_ui() -> void:
 	top.add_theme_constant_override("separation", 16)
 	root.add_child(top)
 	var title := Label.new()
-	title.text = "Invading %s" % _country["name"]
+	title.text = ("Defending against %s" if _defensive else "Invading %s") % _country["name"]
 	title.add_theme_font_size_override("font_size", 20)
 	top.add_child(title)
 	_troops_label = Label.new()
@@ -98,7 +108,7 @@ func _build_ui() -> void:
 	_view.tile_clicked.connect(_on_tile_clicked)
 	_view.tile_hovered.connect(_on_tile_hovered)
 	middle.add_child(_view)
-	_view.setup(map)
+	_view.setup(map, _style["colors"])
 	_nations_label = Label.new()
 	_nations_label.custom_minimum_size.x = 200
 	middle.add_child(_nations_label)
@@ -138,7 +148,7 @@ func _build_ui() -> void:
 	result_box.add_child(home)
 
 	_confirm_retreat = ConfirmationDialog.new()
-	_confirm_retreat.dialog_text = "Retreat? The invasion fails and the supplies are lost."
+	_confirm_retreat.dialog_text = "Retreat? You lose this war." + ("\nThey will plunder your lands." if Game.pending_war.get("defensive", false) else " The supplies are lost.")
 	_confirm_retreat.confirmed.connect(func(): _end(false); _return_home())
 	add_child(_confirm_retreat)
 
@@ -160,8 +170,8 @@ func _process(delta: float) -> void:
 	if state != "playing":
 		_view.redraw_map()
 		_end(state == "won")
-		_result_label.text = "Victory! %s is yours.\n%s" % [_country["name"], _country["reward_desc"]] if state == "won" \
-			else "Defeat. Your army was wiped out."
+		_result_label.text = "Victory! %s is yours." % _country["name"] if state == "won" \
+			else ("Defeat. %s plunders your lands." % _country["name"] if _defensive else "Defeat. Your army was wiped out.")
 		_result_panel.visible = true
 		_result_panel.reset_size()
 		_result_panel.position = (size - _result_panel.size) / 2.0
@@ -236,11 +246,23 @@ func _apply_buffs() -> void:
 	_buff_label.text = "  ".join(parts)
 
 
+# Bigger targets bring allies into the fight.
+static func enemies_for(target: Dictionary, tier: Dictionary, defensive: bool) -> Array:
+	var strength: float = target["power"] * tier["strength"]
+	var aggression: float = maxf(target["aggression"], 0.7) if defensive else target["aggression"]
+	var enemies := [{"name": target["name"], "color": ENEMY_COLORS[0], "troop_mult": strength, "aggression": aggression}]
+	if target["power"] >= 1.2:
+		enemies.append({"name": "%s Allies" % target["name"], "color": ENEMY_COLORS[1], "troop_mult": strength * 0.6, "aggression": aggression * 0.8})
+	if target["power"] >= 1.7:
+		enemies.append({"name": "%s Vassals" % target["name"], "color": ENEMY_COLORS[2], "troop_mult": strength * 0.5, "aggression": aggression * 0.8})
+	return enemies
+
+
 func _end(won: bool) -> void:
 	if _finished:
 		return
 	_finished = true
-	Game.finish_invasion(won)
+	Game.finish_war(won)
 
 
 func _return_home() -> void:
@@ -284,7 +306,7 @@ func _on_tile_hovered(tile: Vector2i) -> void:
 		_hover_label.text = ""
 		return
 	var o := map.owner_at(tile)
-	var terrain_name: String = TERRAIN_NAMES[map.terrain[tile.y * map.width + tile.x]]
+	var terrain_name: String = _style["names"][map.terrain[tile.y * map.width + tile.x]]
 	if o >= 0:
 		_hover_label.text = "%s (%s)" % [map.nations[o]["name"], terrain_name]
 	elif o == InvasionMap.NEUTRAL:

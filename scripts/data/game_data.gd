@@ -101,13 +101,13 @@ const JOBS := [
 # army:size, army:regen, army:attack, iq_cap, teaching, hazard, hazard:<job or idle>,
 # morale, health, crime, build_cost, plague_risk, bad_events.
 const BUILDINGS := [
-	{"id": "hut", "name": "Hut", "requires": "wood", "cost": {"wood": 15.0}, "scale": 1.15,
+	{"id": "hut", "name": "Hut", "requires": "wood", "cost": {"wood": 15.0}, "scale": 1.3,
 		"desc": "+3 max population.", "effects": [{"key": "pop_cap", "add": 3}]},
 	{"id": "granary", "name": "Granary", "requires": "stone", "cost": {"wood": 100.0, "stone": 50.0}, "scale": 1.3,
 		"desc": "Food spoils 10% slower.", "effects": [{"key": "spoil:food", "mult": 0.9}]},
-	{"id": "stone_house", "name": "Stone House", "requires": "stone", "cost": {"stone": 200.0}, "scale": 1.15,
+	{"id": "stone_house", "name": "Stone House", "requires": "stone", "cost": {"stone": 200.0}, "scale": 1.3,
 		"desc": "+8 max population.", "effects": [{"key": "pop_cap", "add": 8}]},
-	{"id": "brick_house", "name": "Brick House", "requires": "clay", "cost": {"clay": 1500.0}, "scale": 1.15,
+	{"id": "brick_house", "name": "Brick House", "requires": "clay", "cost": {"clay": 1500.0}, "scale": 1.3,
 		"desc": "+20 max population.", "effects": [{"key": "pop_cap", "add": 20}]},
 	{"id": "standing_stones", "name": "Standing Stones", "requires": "stone", "cost": {"stone": 400.0}, "scale": 1.5,
 		"desc": "+4 morale.", "effects": [{"key": "morale", "add": 4}]},
@@ -135,13 +135,13 @@ const BUILDINGS := [
 		"desc": "Crafts random items. Each Artisan works on one commission at a time.", "effects": []},
 	{"id": "blacksmith", "name": "Blacksmith", "requires": "bronze", "cost": {"stone": 1e6, "copper": 2e5, "bronze": 5e4}, "scale": 1.5,
 		"desc": "Forges random army items. Each Blacksmith works on one commission at a time.", "effects": []},
-	{"id": "townhouse", "name": "Townhouse", "requires": "iron", "cost": {"iron": 5e4, "bronze": 2e4}, "scale": 1.15,
+	{"id": "townhouse", "name": "Townhouse", "requires": "iron", "cost": {"iron": 5e4, "bronze": 2e4}, "scale": 1.3,
 		"desc": "+60 max population.", "effects": [{"key": "pop_cap", "add": 60}]},
-	{"id": "apartment", "name": "Apartment", "requires": "steel", "cost": {"steel": 1e6}, "scale": 1.15,
+	{"id": "apartment", "name": "Apartment", "requires": "steel", "cost": {"steel": 1e6}, "scale": 1.3,
 		"desc": "+200 max population.", "effects": [{"key": "pop_cap", "add": 200}]},
 	{"id": "battery", "name": "Battery", "requires": "electricity", "cost": {"steel": 5e8, "copper": 1e9}, "scale": 1.3,
 		"desc": "Electricity drains 15% slower.", "effects": [{"key": "spoil:electricity", "mult": 0.85}]},
-	{"id": "arcology", "name": "Arcology", "requires": "silicon", "cost": {"silicon": 1e9, "steel": 1e10}, "scale": 1.15,
+	{"id": "arcology", "name": "Arcology", "requires": "silicon", "cost": {"silicon": 1e9, "steel": 1e10}, "scale": 1.3,
 		"desc": "+1500 max population.", "effects": [{"key": "pop_cap", "add": 1500}]},
 ]
 
@@ -601,37 +601,6 @@ const SYNERGIES := [
 		"effects": [{"key": "job:all", "mult": 5.0}, {"key": "army:attack", "mult": 4.0}]},
 ]
 
-# --- invasions ------------------------------------------------------------------
-
-# Countries are invaded in order; each needs the previous one conquered and its "requires" resource unlocked.
-# Conquering pays out "loot" once and applies "effects" permanently.
-const COUNTRIES := [
-	{"id": "ugs_tribe", "name": "Ug's Tribe", "requires": "clay", "desc": "A small tribe next door.",
-		"enemies": [{"name": "Ug's Tribe", "color": Color(0.85, 0.3, 0.25), "troop_mult": 0.6, "aggression": 0.2}],
-		"cost": {"food": 2000.0, "wood": 5000.0}, "loot": {"food": 1e4, "wood": 2e4, "stone": 2e4},
-		"reward_desc": "All workers produce 1.25x.", "effects": [{"key": "job:all", "mult": 1.25}]},
-	{"id": "the_mudlands", "name": "The Mudlands", "requires": "clay", "desc": "A swampy people who really like mud.",
-		"enemies": [{"name": "Mud People", "color": Color(0.65, 0.45, 0.25), "troop_mult": 1.0, "aggression": 0.35}],
-		"cost": {"food": 5000.0, "clay": 5000.0}, "loot": {"clay": 1e5},
-		"reward_desc": "Population grows 1.5x faster, +20 max population.", "effects": [{"key": "growth", "mult": 1.5}, {"key": "pop_cap", "add": 20}]},
-	{"id": "copper_clans", "name": "Copper Hill Clans", "requires": "copper", "desc": "Two clans fighting over shiny hills.",
-		"enemies": [{"name": "Red Hill Clan", "color": Color(0.9, 0.45, 0.2), "troop_mult": 1.3, "aggression": 0.4},
-			{"name": "Green Hill Clan", "color": Color(0.35, 0.75, 0.3), "troop_mult": 1.3, "aggression": 0.4}],
-		"cost": {"food": 2e4, "copper": 2e4}, "loot": {"copper": 5e5},
-		"reward_desc": "All workers produce 1.5x.", "effects": [{"key": "job:all", "mult": 1.5}]},
-	{"id": "bronze_kingdom", "name": "The Bronze Kingdom", "requires": "bronze", "desc": "A proper kingdom with a king and everything.",
-		"enemies": [{"name": "Bronze Kingdom", "color": Color(0.8, 0.6, 0.2), "troop_mult": 1.8, "aggression": 0.5},
-			{"name": "Tin Traders", "color": Color(0.6, 0.6, 0.7), "troop_mult": 1.2, "aggression": 0.3}],
-		"cost": {"food": 1e5, "bronze": 1e5}, "loot": {"bronze": 5e6},
-		"reward_desc": "All workers produce 2x.", "effects": [{"key": "job:all", "mult": 2.0}]},
-	{"id": "iron_empire", "name": "The Iron Empire", "requires": "iron", "desc": "Three iron-clad nations that hate everyone.",
-		"enemies": [{"name": "Iron Empire", "color": Color(0.45, 0.45, 0.5), "troop_mult": 2.5, "aggression": 0.6},
-			{"name": "Rust Legion", "color": Color(0.7, 0.3, 0.15), "troop_mult": 1.5, "aggression": 0.5},
-			{"name": "Ore Barons", "color": Color(0.55, 0.35, 0.55), "troop_mult": 1.5, "aggression": 0.4}],
-		"cost": {"food": 5e5, "iron": 1e6}, "loot": {"iron": 5e7},
-		"reward_desc": "All workers produce 2.5x.", "effects": [{"key": "job:all", "mult": 2.5}]},
-]
-
 # --- rebirth ---------------------------------------------------------------------
 
 # Legacy earned on rebirth for each resource unlocked during the run, plus per conquest (deaths: see Game.deaths_legacy).
@@ -672,7 +641,7 @@ static var _index: Dictionary = {}
 static func find(list_name: String, id: String) -> Dictionary:
 	if _index.is_empty():
 		for pair in [["resource", RESOURCES], ["tech", TECHS], ["job", JOBS], ["building", BUILDINGS], ["upgrade", UPGRADES],
-				["maker", MAKERS], ["item", ITEMS], ["synergy", SYNERGIES], ["country", COUNTRIES], ["prestige", PRESTIGE]]:
+				["maker", MAKERS], ["item", ITEMS], ["synergy", SYNERGIES], ["prestige", PRESTIGE]]:
 			for entry in pair[1]:
 				_index["%s:%s" % [pair[0], entry["id"]]] = entry
 	return _index.get("%s:%s" % [list_name, id], {})

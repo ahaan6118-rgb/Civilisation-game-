@@ -14,8 +14,9 @@ var _tech_list: VBoxContainer
 var _building_list: VBoxContainer
 var _upgrade_list: VBoxContainer
 var _craft_list: VBoxContainer
-var _invasion_list: VBoxContainer
-var _invade_button: Button
+var _war_list: VBoxContainer
+var _war_warning: Label
+var _defend_button: Button
 var _legacy_list: VBoxContainer
 var _rebirth_button: Button
 var _prestige_buttons: Dictionary = {}
@@ -114,7 +115,7 @@ func _build_layout() -> void:
 	_building_list = _make_tab(tabs, "Buildings")
 	_upgrade_list = _make_tab(tabs, "Upgrades")
 	_craft_list = _make_tab(tabs, "Crafting")
-	_invasion_list = _make_tab(tabs, "Invasions")
+	_war_list = _make_tab(tabs, "War")
 	_legacy_list = _make_tab(tabs, "Legacy")
 
 	var bottom := HBoxContainer.new()
@@ -264,7 +265,7 @@ func _clear(container: Container) -> void:
 
 func _rebuild_lists() -> void:
 	var era := EraData.current(Game.unlocked)
-	_era_label.text = "%s  -  %s  (%s)" % [era["name"], era["subtitle"], era["time"]]
+	_era_label.text = "%s  -  %s  (%s)    Kardashev Type %.2f" % [era["name"], era["subtitle"], era["time"], Game.kardashev()]
 	_era_label.tooltip_text = era["concept"]
 	_rebuild_events()
 	_rebuild_click_choices()
@@ -272,7 +273,7 @@ func _rebuild_lists() -> void:
 	_rebuild_jobs()
 	_rebuild_shop()
 	_rebuild_crafting()
-	_rebuild_invasions()
+	_rebuild_war()
 	_rebuild_legacy()
 	_refresh()
 
@@ -482,10 +483,15 @@ func _refresh() -> void:
 			button.text = "%s (%d/%d)\n%s\nCost: %d Legacy" % [p["name"], level, p["max"], p["desc"], Game.prestige_cost(id)]
 			button.disabled = not Game.can_buy_prestige(id)
 
-	if _invade_button:
-		var c := Game.next_country()
-		_invade_button.text = "Launch invasion\nArmy: %s troops\nSupplies: %s" % [NumFormat.fmt(Game.army_size()), NumFormat.cost(c["cost"])]
-		_invade_button.disabled = not Game.can_invade(c["id"])
+	if _war_warning:
+		if Game.incoming_war.is_empty():
+			_war_warning.visible = false
+			_defend_button.visible = false
+		else:
+			var enemy := WarData.find_target(Game.incoming_war["target"])
+			_war_warning.text = "%s declared war on you! They arrive in %ds." % [enemy["name"], maxi(0, ceili(Game.incoming_war["countdown"]))]
+			_war_warning.visible = true
+			_defend_button.visible = true
 
 	for item in _commission_buttons:
 		var maker_id: String = item["maker"]
@@ -579,7 +585,7 @@ func _rebuild_crafting() -> void:
 
 	var supplies := Label.new()
 	supplies.add_theme_font_size_override("font_size", 18)
-	supplies.text = "Consumables (used during invasions)"
+	supplies.text = "Consumables (used in battle)"
 	_craft_list.add_child(supplies)
 	if Game.consumables.is_empty():
 		_add_wrapped(_craft_list, "None yet.", Color(1, 1, 1, 0.5))
@@ -617,46 +623,44 @@ func _rebuild_crafting() -> void:
 		_craft_list.add_child(secret)
 
 
-func _rebuild_invasions() -> void:
-	_clear(_invasion_list)
-	_invade_button = null
-	if not Game.invasion_unlocked():
-		_add_wrapped(_invasion_list, "Research Warfare in the Discoveries tab to invade other countries.", Color(1, 1, 1, 0.6))
+func _rebuild_war() -> void:
+	_clear(_war_list)
+	_war_warning = null
+	_defend_button = null
+	if not Game.war_unlocked():
+		_add_wrapped(_war_list, "Research Warfare in the Discoveries tab to wage war on your neighbours.", Color(1, 1, 1, 0.6))
 		return
-	var c := Game.next_country()
-	if c.is_empty():
-		_add_wrapped(_invasion_list, "You have conquered every known country. For now.", GOOD_COLOR)
-	else:
-		var header := Label.new()
-		header.text = "Next target: %s" % c["name"]
-		header.add_theme_font_size_override("font_size", 18)
-		_invasion_list.add_child(header)
-		_add_wrapped(_invasion_list, c["desc"], Color.WHITE)
-		_add_wrapped(_invasion_list, "Enemy nations: %d" % c["enemies"].size(), Color.WHITE)
-		_add_wrapped(_invasion_list, "Reward: %s" % c["reward_desc"], GOOD_COLOR)
-		_add_wrapped(_invasion_list, "Loot: %s" % NumFormat.cost(c["loot"]), GOOD_COLOR)
-		if not Game.is_unlocked(c["requires"]):
-			_add_wrapped(_invasion_list, "Unlock %s first." % GameData.resource_name(c["requires"]), BAD_COLOR)
-		_add_wrapped(_invasion_list, "Warriors add troops to your army. Leaving mid-invasion counts as a retreat.", Color(1, 1, 1, 0.6))
-		var country_id: String = c["id"]
-		_invade_button = Button.new()
-		_invade_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		_invade_button.pressed.connect(func():
-			if Game.start_invasion(country_id):
-				get_tree().change_scene_to_file("res://scenes/invasion.tscn"))
-		_invasion_list.add_child(_invade_button)
-	var done: Array = []
-	for country in GameData.COUNTRIES:
-		if Game.conquered.has(country["id"]):
-			done.append(country)
-	if not done.is_empty():
-		_invasion_list.add_child(HSeparator.new())
-		var conquered_header := Label.new()
-		conquered_header.text = "Conquered"
-		conquered_header.add_theme_font_size_override("font_size", 18)
-		_invasion_list.add_child(conquered_header)
-		for country in done:
-			_add_wrapped(_invasion_list, "%s: %s" % [country["name"], country["reward_desc"]], GOOD_COLOR)
+	var tier: Dictionary = WarData.TIERS[Game.current_tier()]
+	var header := Label.new()
+	header.text = "Kardashev Type %.2f    Fighting over: %s" % [Game.kardashev(), tier["name"]]
+	header.add_theme_font_size_override("font_size", 18)
+	header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_war_list.add_child(header)
+	_add_wrapped(_war_list, "Army: %s %s (%s per Warrior this age)" % [NumFormat.fmt(Game.army_size()), tier["unit"], NumFormat.fmt(Game.troops_per_warrior())], Color.WHITE)
+	_war_warning = Label.new()
+	_war_warning.modulate = BAD_COLOR
+	_war_warning.add_theme_font_size_override("font_size", 18)
+	_war_warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_war_list.add_child(_war_warning)
+	_defend_button = Button.new()
+	_defend_button.text = "Defend now!"
+	_defend_button.pressed.connect(func():
+		if Game.start_war(Game.incoming_war["target"], true):
+			get_tree().change_scene_to_file("res://scenes/invasion.tscn"))
+	_war_list.add_child(_defend_button)
+	var wage := Button.new()
+	wage.text = "Wage War (World Map)"
+	wage.custom_minimum_size.y = 60
+	wage.add_theme_font_size_override("font_size", 20)
+	wage.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/world_map.tscn"))
+	_war_list.add_child(wage)
+	_add_wrapped(_war_list, "Neighbours will declare war on you too. When they do you have %d seconds before the battle starts, wherever you are. Losing a defence costs people, stockpiles and buildings." % int(WarData.DECLARE_WARNING), Color(1, 1, 1, 0.6))
+	if not Game.conquered.is_empty():
+		_war_list.add_child(HSeparator.new())
+		var names: PackedStringArray = []
+		for id in Game.conquered:
+			names.append(WarData.find_target(id)["name"])
+		_add_wrapped(_war_list, "Conquered (%d): %s" % [names.size(), ", ".join(names)], GOOD_COLOR)
 
 
 func _rebuild_events() -> void:

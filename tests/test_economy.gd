@@ -94,7 +94,7 @@ func _run() -> void:
 	_game.amounts["wood"] = 100.0
 	_check(_game.buy_building("hut"), "buy hut")
 	_check(_game.pop_cap() == 8, "hut adds 3 pop cap")
-	_check(_game.building_cost("hut")["wood"] == 18.0, "hut cost scales")
+	_check(_game.building_cost("hut")["wood"] == 20.0, "hut cost scales")
 	_game.amounts["stone"] = 100.0
 	_check(_game.buy_upgrade("stone_axes"), "buy stone axes")
 	_check(_game.job_multiplier("woodcutter") == 2.0, "woodcutters doubled")
@@ -213,54 +213,83 @@ func _run() -> void:
 	m._recount()
 	_check(m.status() == "won", "wiping out the enemy wins")
 
-	print("invasions in the economy")
+	print("war")
 	_game.reset()
 	_game.unlocked["stone"] = true
 	_game.unlocked["clay"] = true
 	_game.techs["stone_working"] = true
 	_game.techs["pottery"] = true
-	_check(not _game.job_available(GameData.find("job", "warrior")), "no warriors before Warfare")
+	_check(not _game.job_available(GameData.find("job", "warrior")) and not _game.tier_unlocked(0), "no war before Warfare")
 	_game.amounts["stone"] = 5000.0
 	_game.amounts["clay"] = 2000.0
-	_check(_game.research("warfare") and _game.invasion_unlocked(), "research Warfare")
-	_check(_game.is_unlocked("clay") and not _game.unlocked.has(""), "Warfare unlocks no resource")
+	_check(_game.research("warfare") and _game.war_unlocked() and _game.tier_unlocked(0), "Warfare opens The Valley")
 	_game.population = 5
 	_game.assign_job("warrior", 4)
-	_check(is_equal_approx(_game.army_size(), 500.0), "4 warriors add 200 troops")
-	_check(_game.next_country()["id"] == "ugs_tribe", "Ug's Tribe is first")
-	_check(not _game.start_invasion("ugs_tribe"), "need supplies to invade")
-	_game.amounts["food"] = 1e5
-	_game.amounts["wood"] = 1e5
-	_check(not _game.start_invasion("the_mudlands"), "cannot skip ahead")
-	_check(_game.start_invasion("ugs_tribe") and _game.pending_invasion == "ugs_tribe", "launch invasion")
-	var invasion_screen: Node = load("res://scenes/invasion.tscn").instantiate()
-	root.add_child(invasion_screen)
+	_check(is_equal_approx(_game.army_size(), 500.0), "4 Clay-age warriors add 200 troops")
+	_check(_game.can_attack("ugs_tribe") and _game.can_attack("the_mudlands"), "neighbours of home can be attacked")
+	_check(not _game.can_attack("cave_kings"), "far lands can't be attacked yet")
+	_check(not _game.tier_unlocked(1), "The Continent is locked")
+	_game.amounts["food"] = 1000.0
+	_game.amounts["wood"] = 1000.0
+	_check(_game.start_war("ugs_tribe") and _game.pending_war["target"] == "ugs_tribe", "declare war")
+	_check(_game.amounts["food"] == 800.0, "war costs 20% of food")
+	var battle: Node = load("res://scenes/invasion.tscn").instantiate()
+	root.add_child(battle)
 	for i in 10:
 		await process_frame
-	_check(invasion_screen.map.nations.size() == 2, "invasion screen builds the map")
+	_check(battle.map.nations.size() == 2 and battle.map.nations[1]["name"] == "Ug's Tribe", "the battle map builds")
 	_game.consumables = {"rallying_horn": 1, "sling_stones": 1, "fire_pots": 1}
-	var you: Dictionary = invasion_screen.map.nations[0]
+	var you: Dictionary = battle.map.nations[0]
 	var troops_before: float = you["troops"]
-	invasion_screen.use_item("rallying_horn")
-	_check(absf(you["troops"] - troops_before - invasion_screen.map.max_troops(0) * 0.3) < 1.0, "Rallying Horn adds 30% of max troops")
-	var enemy_before: float = invasion_screen.map.nations[1]["troops"]
-	invasion_screen.use_item("fire_pots")
-	_check(is_equal_approx(invasion_screen.map.nations[1]["troops"], enemy_before * 0.7), "Fire Pots burn 30% of enemy troops")
-	invasion_screen.use_item("sling_stones")
-	_check(is_equal_approx(you["attack_mult"], 1.5), "Sling Stones buff attack")
-	invasion_screen._update_buffs(21.0)
-	_check(is_equal_approx(you["attack_mult"], 1.0), "buff wears off")
-	_check(_game.consumables.is_empty(), "all three used up")
-	invasion_screen.queue_free()
+	battle.use_item("rallying_horn")
+	_check(absf(you["troops"] - troops_before - battle.map.max_troops(0) * 0.3) < 1.0, "Rallying Horn adds 30% of max troops")
+	var enemy_before: float = battle.map.nations[1]["troops"]
+	battle.use_item("fire_pots")
+	_check(is_equal_approx(battle.map.nations[1]["troops"], enemy_before * 0.7), "Fire Pots burn 30% of enemy troops")
+	var base_attack: float = you["attack_mult"]
+	battle.use_item("sling_stones")
+	_check(is_equal_approx(you["attack_mult"], base_attack * 1.5), "Sling Stones buff attack")
+	battle._update_buffs(21.0)
+	_check(is_equal_approx(you["attack_mult"], base_attack), "buff wears off")
+	battle.queue_free()
 	var wood_before: float = _game.amounts["wood"]
-	_game.finish_invasion(true)
-	_check(_game.conquered.has("ugs_tribe") and _game.amounts["wood"] == wood_before + 2e4, "conquest gives loot")
-	_check(is_equal_approx(_game.job_multiplier("woodcutter"), 1.25), "conquest bonus applies")
-	_check(_game.next_country()["id"] == "the_mudlands", "Mudlands is next")
-	var conquest_save: Dictionary = JSON.parse_string(JSON.stringify(_game.to_dict()))
+	_game.finish_war(true)
+	_check(_game.conquered.has("ugs_tribe") and _game.pending_war.is_empty(), "victory conquers the target")
+	_check(_game.amounts["wood"] >= wood_before, "conquest gives loot")
+	_check(is_equal_approx(_game.mult("job:all"), 1.1), "each conquest boosts production")
+	_check(_game.can_attack("hill_folk"), "conquering opens new neighbours")
+	_check(_game.kardashev() > 0.0 and _game.kardashev() < 0.3, "Kardashev rises (%.2f)" % _game.kardashev())
+	for t in WarData.TIERS[0]["targets"]:
+		_game.conquered[t["id"]] = true
+	_game.rebuild_modifiers()
+	_check(_game.tier_complete(0) and is_equal_approx(_game.kardashev(), 0.3), "conquering The Valley reaches Type 0.3")
+	_check(not _game.tier_unlocked(1), "The Continent still needs Bronze")
+	_game.unlocked["copper"] = true
+	_game.unlocked["bronze"] = true
+	_check(_game.tier_unlocked(1) and _game.current_tier() == 1, "Bronze opens The Continent")
+	_check(_game.troops_per_warrior() == 200.0, "Bronze-age warriors are 4x stronger")
+	_game.start_war("copper_clans", true)
+	var pop_before_defeat: int = _game.population
+	_game.amounts["clay"] = 1000.0
+	_game.finish_war(false)
+	_check(_game.amounts["clay"] == 700.0 and _game.population < pop_before_defeat, "losing a defence costs stock and people")
+	_game.incoming_war = {"target": "tin_league", "countdown": 3.0}
+	var war_save: Dictionary = JSON.parse_string(JSON.stringify(_game.to_dict()))
 	_game.reset()
-	_game.from_dict(conquest_save)
-	_check(_game.conquered.has("ugs_tribe"), "conquests saved")
+	_game.from_dict(war_save)
+	_check(_game.conquered.size() == 5 and _game.incoming_war.get("target", "") == "tin_league", "conquests and declarations saved")
+	_game.reset()
+	_game.unlocked["clay"] = true
+	_game.techs["warfare"] = true
+	_game._declare_timer = 0.0
+	_game.simulate(0.1, false)
+	_check(_game.incoming_war.get("target", "") in ["ugs_tribe", "the_mudlands", "hill_folk"], "a neighbour declares war")
+	var world: Node = load("res://scenes/world_map.tscn").instantiate()
+	root.add_child(world)
+	for i in 5:
+		await process_frame
+	_check(world.get_child_count() > 0, "the world map builds")
+	world.queue_free()
 
 	print("accidents and IQ")
 	_game.reset()

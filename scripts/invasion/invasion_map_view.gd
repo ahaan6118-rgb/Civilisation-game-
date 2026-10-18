@@ -4,17 +4,18 @@ extends Control
 signal tile_clicked(tile: Vector2i)
 signal tile_hovered(tile: Vector2i)
 
-const TERRAIN_COLORS := [Color(0.16, 0.3, 0.5), Color(0.47, 0.63, 0.32), Color(0.26, 0.45, 0.23), Color(0.52, 0.5, 0.47)]
 const OWNER_TINT := 0.7
 
 var map: InvasionMap
+var terrain_colors: Array = []
 var _image: Image
 var _texture: ImageTexture
 var _labels: Array = []
 
 
-func setup(m: InvasionMap) -> void:
+func setup(m: InvasionMap, colors: Array) -> void:
 	map = m
+	terrain_colors = colors
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_image = Image.create(m.width, m.height, false, Image.FORMAT_RGB8)
@@ -27,7 +28,7 @@ func redraw_map() -> void:
 	for n in map.nations:
 		sums.append([Vector2.ZERO, 0])
 	for i in map.owners.size():
-		var c: Color = TERRAIN_COLORS[map.terrain[i]]
+		var c: Color = terrain_colors[map.terrain[i]]
 		var o := map.owners[i]
 		if o >= 0:
 			c = c.lerp(map.nations[o]["color"], OWNER_TINT)

@@ -44,7 +44,9 @@ var consumables: Dictionary = {}
 var crafts: Array = []
 var crafted_count: Dictionary = {}
 var conquered: Dictionary = {}
-var pending_invasion := ""
+var pending_war: Dictionary = {}
+var incoming_war: Dictionary = {}
+var _declare_timer := WarData.DECLARE_MAX
 var iq := BASE_IQ
 var run_deaths := 0
 var morale := START_MORALE
@@ -100,7 +102,9 @@ func new_run() -> void:
 	crafts.clear()
 	crafted_count.clear()
 	conquered.clear()
-	pending_invasion = ""
+	pending_war = {}
+	incoming_war = {}
+	_declare_timer = WarData.DECLARE_MAX
 	run_deaths = 0
 	morale = START_MORALE
 	health = START_HEALTH
@@ -137,6 +141,10 @@ func _process(delta: float) -> void:
 		steps += 1
 	if steps == MAX_TICKS_PER_FRAME:
 		_accum = 0.0
+	# A declared war drags you into battle wherever you are once the warning runs out.
+	if not incoming_war.is_empty() and incoming_war["countdown"] <= 0.0 and pending_war.is_empty():
+		start_war(incoming_war["target"], true)
+		get_tree().change_scene_to_file("res://scenes/invasion.tscn")
 
 
 # offline = true skips spoilage, starvation and growth, so idle time is never punished.
@@ -153,6 +161,7 @@ func simulate(dt: float, offline: bool) -> void:
 	_run_illness(dt)
 	_run_crime(dt)
 	_run_events(dt)
+	_run_war_declarations(dt)
 	_apply_spoilage(dt)
 	_update_population(dt)
 	for id in amounts:
@@ -572,10 +581,13 @@ func rebuild_modifiers() -> void:
 	for syn in active_synergies():
 		for e in syn["effects"]:
 			_apply_effect(e, 1)
-	for c in GameData.COUNTRIES:
-		if conquered.has(c["id"]):
-			for e in c["effects"]:
-				_apply_effect(e, 1)
+	for e in WarData.CONQUEST_EFFECTS:
+		if not conquered.is_empty():
+			_apply_effect(e, conquered.size())
+	var tiers_done := completed_tiers()
+	if tiers_done > 0:
+		for e in WarData.TIER_EFFECTS:
+			_apply_effect(e, tiers_done)
 	for p in GameData.PRESTIGE:
 		var level: int = prestige.get(p["id"], 0)
 		if level > 0:
@@ -926,56 +938,163 @@ func active_synergies() -> Array:
 	return result
 
 
-# --- invasions ----------------------------------------------------------------
+# --- war -------------------------------------------------------------------------
 
-const BASE_ARMY := 300.0
 const TROOPS_PER_WARRIOR := 50.0
 
 
-func invasion_unlocked() -> bool:
+func war_unlocked() -> bool:
 	return techs.has("warfare")
 
 
+func era_index() -> int:
+	return EraData.ERAS.find(EraData.current(unlocked))
+
+
+# Warriors get better weapons every age: 50 troops each in the Clay age, doubling every age after.
+func troops_per_warrior() -> float:
+	return TROOPS_PER_WARRIOR * pow(2.0, maxi(0, era_index() - 2))
+
+
 func army_size() -> float:
-	return (BASE_ARMY + jobs.get("warrior", 0) * TROOPS_PER_WARRIOR) * mult("army:size")
+	return (WarData.BASE_ARMY + jobs.get("warrior", 0) * troops_per_warrior()) * mult("army:size")
 
 
-# The first unconquered country, or {} when all are conquered. Check is_unlocked(country.requires) before launching.
-func next_country() -> Dictionary:
-	for c in GameData.COUNTRIES:
-		if not conquered.has(c["id"]):
-			return c
-	return {}
-
-
-func can_invade(country_id: String) -> bool:
-	var c := next_country()
-	return invasion_unlocked() and not c.is_empty() and c["id"] == country_id and is_unlocked(c["requires"]) and can_afford(c["cost"])
-
-
-func start_invasion(country_id: String) -> bool:
-	if not can_invade(country_id):
-		return false
-	_pay(GameData.find("country", country_id)["cost"])
-	pending_invasion = country_id
-	weariness += 10.0
+func tier_complete(i: int) -> bool:
+	for t in WarData.TIERS[i]["targets"]:
+		if not conquered.has(t["id"]):
+			return false
 	return true
 
 
-func finish_invasion(won: bool) -> void:
-	var c := GameData.find("country", pending_invasion)
-	pending_invasion = ""
-	if c.is_empty():
+func tier_unlocked(i: int) -> bool:
+	if not war_unlocked() or not is_unlocked(WarData.TIERS[i]["requires"]):
+		return false
+	return i == 0 or tier_complete(i - 1)
+
+
+# The tier being fought over: the first unlocked, unfinished one (or the last unlocked one).
+func current_tier() -> int:
+	var best := 0
+	for i in WarData.TIERS.size():
+		if not tier_unlocked(i):
+			break
+		best = i
+		if not tier_complete(i):
+			return i
+	return best
+
+
+func kardashev() -> float:
+	var value := 0.0
+	for i in WarData.TIERS.size():
+		var tier: Dictionary = WarData.TIERS[i]
+		var done := 0
+		for t in tier["targets"]:
+			if conquered.has(t["id"]):
+				done += 1
+		if done > 0 or tier_unlocked(i):
+			value = maxf(value, lerpf(tier["kardashev"][0], tier["kardashev"][1], float(done) / tier["targets"].size()))
+	return value
+
+
+func completed_tiers() -> int:
+	var n := 0
+	for i in WarData.TIERS.size():
+		if tier_complete(i):
+			n += 1
+	return n
+
+
+func can_attack(target_id: String) -> bool:
+	var t := WarData.find_target(target_id)
+	if t.is_empty() or conquered.has(target_id) or not pending_war.is_empty() or not tier_unlocked(t["tier"]):
+		return false
+	for n in WarData.neighbours(t["tier"], target_id):
+		if n == "home" or conquered.has(n):
+			return true
+	return false
+
+
+func war_cost() -> Dictionary:
+	var cost := {"food": maxf(50.0, ceilf(amounts["food"] * 0.2))}
+	var top := _biggest_stockpile()
+	cost[top] = cost.get(top, 0.0) + maxf(50.0, ceilf(amounts.get(top, 0.0) * 0.1))
+	return cost
+
+
+# Starts a battle. Attacks you choose cost supplies; defending is free (and not optional).
+func start_war(target_id: String, defensive := false) -> bool:
+	if not defensive:
+		if not can_attack(target_id) or not _pay(war_cost()):
+			return false
+		weariness += 10.0
+	pending_war = {"target": target_id, "defensive": defensive}
+	incoming_war = {}
+	return true
+
+
+func finish_war(won: bool) -> void:
+	var t := WarData.find_target(pending_war.get("target", ""))
+	var defensive: bool = pending_war.get("defensive", false)
+	pending_war = {}
+	if t.is_empty():
 		return
 	if not won:
 		weariness += 20.0
-		post("The invasion of %s failed. The supplies are gone, and the people are sick of war." % c["name"])
+		if defensive:
+			for id in unlocked:
+				amounts[id] *= 0.7
+			var died := _kill_random(roundi(population * 0.2))
+			var lost := _destroy_buildings(3)
+			post("%s overran you. 30%% of every stockpile taken, %d dead, %d buildings burned." % [t["name"], died, lost])
+		else:
+			post("The war against %s failed. The supplies are gone, and the people are sick of war." % t["name"])
+		_changed()
 		return
-	conquered[c["id"]] = true
-	for res in c["loot"]:
-		amounts[res] = amounts.get(res, 0.0) + c["loot"][res]
-	post("Conquered %s! Loot: %s. %s" % [c["name"], NumFormat.cost(c["loot"]), c["reward_desc"]])
+	var tier_before := completed_tiers()
+	conquered[t["id"]] = true
+	var loot := {}
+	for id in unlocked:
+		var gain: float = production_per_second(id) * 180.0 + amounts[id] * 0.15
+		if gain > 0.0:
+			loot[id] = gain
+			amounts[id] += gain
+	post("Conquered %s! Loot: %s. Everything works 10%% harder and your army grows." % [t["name"], NumFormat.cost(loot)])
+	if completed_tiers() > tier_before:
+		var tier: Dictionary = WarData.TIERS[t["tier"]]
+		post("You rule %s! Kardashev Type %.1f. Production doubles and the army grows 1.5x." % [tier["name"], tier["kardashev"][1]])
+		if t["tier"] == WarData.TIERS.size() - 1:
+			post("Kardashev Type VII. There is nothing left to conquer. You won.")
 	_changed()
+
+
+func _run_war_declarations(dt: float) -> void:
+	if not war_unlocked() or not pending_war.is_empty():
+		return
+	if not incoming_war.is_empty():
+		incoming_war["countdown"] -= dt
+		return
+	_declare_timer -= dt
+	if _declare_timer > 0.0:
+		return
+	_declare_timer = _rng.randf_range(WarData.DECLARE_MIN, WarData.DECLARE_MAX)
+	var tier := current_tier()
+	if not tier_unlocked(tier):
+		return
+	var pool: Array = []
+	var total := 0.0
+	for t in WarData.TIERS[tier]["targets"]:
+		if not conquered.has(t["id"]) and can_attack(t["id"]):
+			pool.append(t)
+			total += t["aggression"]
+	var pick := _rng.randf() * total
+	for t in pool:
+		pick -= t["aggression"]
+		if pick <= 0.0:
+			incoming_war = {"target": t["id"], "countdown": WarData.DECLARE_WARNING}
+			post("WAR! %s has declared war on you! Their army arrives in %d seconds." % [t["name"], int(WarData.DECLARE_WARNING)])
+			return
 
 
 # --- rebirth -------------------------------------------------------------------
@@ -984,7 +1103,7 @@ func legacy_gain() -> int:
 	var gain := 0
 	for id in unlocked:
 		gain += GameData.ERA_LEGACY.get(id, 0)
-	gain += conquered.size() * GameData.LEGACY_PER_CONQUEST
+	gain += conquered.size() * GameData.LEGACY_PER_CONQUEST + completed_tiers() * WarData.LEGACY_PER_TIER
 	gain += deaths_legacy()
 	return gain
 
@@ -1084,6 +1203,8 @@ func to_dict() -> Dictionary:
 		"weariness": weariness,
 		"events": events.duplicate(true),
 		"event_timer": _event_timer,
+		"incoming_war": incoming_war.duplicate(),
+		"declare_timer": _declare_timer,
 	}
 
 
@@ -1112,6 +1233,10 @@ func from_dict(data: Dictionary) -> void:
 	grief = float(data.get("grief", 0.0))
 	weariness = float(data.get("weariness", 0.0))
 	_event_timer = float(data.get("event_timer", EventData.MAX_GAP))
+	_declare_timer = float(data.get("declare_timer", WarData.DECLARE_MAX))
+	var saved_war: Dictionary = data.get("incoming_war", {})
+	if not WarData.find_target(String(saved_war.get("target", ""))).is_empty():
+		incoming_war = {"target": String(saved_war["target"]), "countdown": float(saved_war.get("countdown", WarData.DECLARE_WARNING))}
 	for ev in data.get("events", []):
 		if not EventData.find(String(ev.get("id", ""))).is_empty():
 			events.append({"id": String(ev["id"]), "remaining": float(ev["remaining"]), "target": String(ev.get("target", ""))})
@@ -1140,7 +1265,8 @@ func from_dict(data: Dictionary) -> void:
 		if is_consumable(id):
 			consumables[id] = int(saved_consumables[id])
 	for id in data.get("conquered", []):
-		conquered[id] = true
+		if not WarData.find_target(String(id)).is_empty():
+			conquered[String(id)] = true
 	var saved_crafted: Dictionary = data.get("crafted_count", {})
 	for id in saved_crafted:
 		crafted_count[id] = int(saved_crafted[id])
