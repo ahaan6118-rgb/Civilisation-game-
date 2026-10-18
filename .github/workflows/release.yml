@@ -1,8 +1,11 @@
 name: Release
 
+# Release by changing VERSION (or by pushing a v* tag).
 on:
   push:
+    branches: ["**"]
     tags: ["v*"]
+    paths: ["VERSION"]
 
 permissions:
   contents: write
@@ -14,6 +17,15 @@ jobs:
       GODOT_VERSION: "4.7.2"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Work out the version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install Godot and export templates
         run: |
@@ -45,9 +57,11 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          name: Civilisation Idle ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Civilisation Idle ${{ steps.version.outputs.tag }}
           body_path: RELEASE_NOTES.md
-          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
+          prerelease: ${{ contains(steps.version.outputs.tag, 'alpha') || contains(steps.version.outputs.tag, 'beta') }}
           files: |
             build/CivilisationIdle-mac.zip
             build/CivilisationIdle-windows.zip
