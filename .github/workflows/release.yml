@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GODOT_VERSION: "4.7.2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot and export templates
+        run: |
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          wget -q "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          wget -q "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q "Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mv templates/* "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/"
+
+      - name: Run tests
+        run: |
+          godot --headless --path . --import || true
+          godot --headless --path . -s tests/test_economy.gd
+
+      - name: Export builds
+        run: |
+          mkdir -p build/windows build/linux
+          godot --headless --path . --export-release macOS build/CivilisationIdle-mac.zip
+          godot --headless --path . --export-release Windows build/windows/CivilisationIdle.exe
+          godot --headless --path . --export-release Linux build/linux/CivilisationIdle.x86_64
+          cd build
+          zip -j CivilisationIdle-windows.zip windows/CivilisationIdle.exe
+          zip -j CivilisationIdle-linux.zip linux/CivilisationIdle.x86_64
+          ls -la
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Civilisation Idle ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
+          files: |
+            build/CivilisationIdle-mac.zip
+            build/CivilisationIdle-windows.zip
+            build/CivilisationIdle-linux.zip
