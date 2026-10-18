@@ -157,7 +157,7 @@ func _update_population(dt: float) -> void:
 		_grow_progress = 0.0
 		return
 	# Bigger populations grow faster so late eras are reachable.
-	_grow_progress += dt * mult("growth") * (1.0 + population * 0.02) / GROW_TIME
+	_grow_progress += dt * mult("growth") * (1.0 + sqrt(population) * 0.15) / GROW_TIME
 	if _grow_progress >= 1.0:
 		_grow_progress = 0.0
 		population += 1
