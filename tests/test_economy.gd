@@ -36,6 +36,7 @@ func _run() -> void:
 	_game.set_process(false)
 	root.get_node("SaveManager").set_process(false)
 	_game._rng.seed = 12345
+	_game.events_enabled = false
 
 	print("starting state")
 	_game.reset()
@@ -149,7 +150,7 @@ func _run() -> void:
 	_game.items = {"woven_basket": 2, "flint_knife": 1}
 	_game.rebuild_modifiers()
 	_check(_game.active_synergies().size() == 1, "Hunter-Gatherer synergy active")
-	_check(is_equal_approx(_game.job_multiplier("gatherer"), 1.6 * 3.0), "duplicates add linearly, synergy scales per basket")
+	_check(is_equal_approx(_game.job_multiplier("gatherer") / _game.morale_factor(), 1.6 * 3.0), "duplicates add linearly, synergy scales per basket")
 	_game.items = {"painted_pot": 3}
 	_game.rebuild_modifiers()
 	_check(is_equal_approx(_game.mult("spoil:food"), 1.0 / (1.0 + (1.0 / 0.85 - 1.0) * 3.0)), "stacked reductions have diminishing returns")
@@ -315,6 +316,72 @@ func _run() -> void:
 	_check(_game.legacy == 0 and _game.prestige.is_empty(), "wipe clears legacy")
 	_game.from_dict(legacy_save)
 	_check(_game.legacy == 5 and _game.prestige.get("heirloom", 0) == 1 and _game.runs == 1, "legacy and prestige saved")
+
+	print("morale, health and crime")
+	_game.reset()
+	_check(is_equal_approx(_game.morale_factor(), 1.0), "morale 50 is normal speed")
+	_game.morale = 0.0
+	_check(is_equal_approx(_game.morale_factor(), 0.6), "morale 0 works at 0.6x")
+	_game.morale = 50.0
+	_game.population = 3
+	_game.grief = 20.0
+	_check(is_equal_approx(_game.morale_target(), 30.0), "grief lowers target morale")
+	_game.grief = 0.0
+	_game.population = 10
+	_check(is_equal_approx(_game.morale_target(), 40.0), "a full town is unhappy")
+	_check(_game.health_target() < _game.START_HEALTH, "a crowded town is less healthy")
+	_game.unlocked["stone"] = true
+	_game.amounts["wood"] = 1000.0
+	_game.morale = 0.0
+	_game._run_crime(10.0)
+	_check(_game.amounts["wood"] < 1000.0 and _game.amounts["food"] == _game.STARTING_FOOD, "crime steals non-food stock when morale is low")
+	_game.health = 10.0
+	_check(_game.illness_per_hour() > 10.0, "sick towns die of illness (%.1f/h)" % _game.illness_per_hour())
+
+	print("events")
+	_game.reset()
+	_game.unlocked["stone"] = true
+	_game.unlocked["clay"] = true
+	_game.population = 10
+	_game.amounts["food"] = 1000.0
+	_check(not _game.event_eligible(EventData.find("famine")), "no famine while fed")
+	_game.start_event("drought")
+	_check(_game.has_event("drought") and is_equal_approx(_game.job_multiplier("gatherer") / _game.morale_factor(), 0.3), "drought cripples gatherers")
+	_check(_game.mult("growth") == 0.0, "no babies in a drought")
+	_game.amounts["stone"] = 1000.0
+	_game.amounts["clay"] = 1000.0
+	var drought_cost: Dictionary = _game.fix_cost(_game.events[0])
+	_check(drought_cost.get("stone", 0.0) == 300.0, "fix costs a share of current stock")
+	_check(_game.fix_event(0) and not _game.has_event("drought"), "Dig Wells ends the drought")
+	_game.start_event("locusts")
+	_game.simulate(61.0, false)
+	_check(not _game.has_event("locusts"), "timed events run out")
+	_game.buildings = {"hut": 3}
+	_game.rebuild_modifiers()
+	_game.population = _game.pop_cap()
+	var pop_before: int = _game.population
+	_game.start_event("flood")
+	_check(_game.buildings["hut"] == 1 and _game.population <= _game.pop_cap() and _game.population < pop_before, "flood destroys huts and the homeless leave")
+	_game.population = 20
+	_game.buildings = {"hut": 10}
+	_game.rebuild_modifiers()
+	_game.unlocked["copper"] = true
+	_game.jobs = {"copper_miner": 5}
+	_game.start_event("exhaustion")
+	_check(_game.events[-1]["target"] == "copper_miner" and is_equal_approx(_game.job_multiplier("copper_miner") / _game.morale_factor(), 0.25), "a mine runs dry")
+	var event_save: Dictionary = JSON.parse_string(JSON.stringify(_game.to_dict()))
+	_game.reset()
+	_game.from_dict(event_save)
+	_check(_game.has_event("exhaustion") and is_equal_approx(_game.job_multiplier("copper_miner") / _game.morale_factor(), 0.25), "events are saved")
+	_game.reset()
+	_game.events_enabled = true
+	_game._event_timer = 0.0
+	_game.simulate(0.1, false)
+	_check(_game._event_timer > 50.0, "the event clock rolls")
+	_game.events_enabled = false
+	_check(EraData.current(_game.unlocked)["name"] == "The Wood & Bone Age", "the first age is Wood & Bone")
+	_game.unlocked["clay"] = true
+	_check(EraData.current(_game.unlocked)["subtitle"] == "The Neolithic", "clay is the Neolithic")
 
 	print("number formatting")
 	_check(NumFormat.fmt(999) == "999", "999")

@@ -23,6 +23,9 @@ var _confirm_rebirth: ConfirmationDialog
 var _click_button: Button
 var _click_choice: OptionButton
 var _click_ids: Array = []
+var _era_label: Label
+var _event_list: VBoxContainer
+var _event_rows: Array = []
 var _log_label: Label
 var _confirm_wipe: ConfirmationDialog
 
@@ -78,6 +81,12 @@ func _build_layout() -> void:
 	var root := VBoxContainer.new()
 	margin.add_child(root)
 
+	_era_label = Label.new()
+	_era_label.add_theme_font_size_override("font_size", 18)
+	_era_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_era_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	root.add_child(_era_label)
+
 	_columns = HBoxContainer.new()
 	_columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_columns.add_theme_constant_override("separation", 12)
@@ -89,6 +98,8 @@ func _build_layout() -> void:
 	var pop_column := _make_panel("Population", 1.2)
 	_pop_label = Label.new()
 	pop_column.add_child(_pop_label)
+	_event_list = VBoxContainer.new()
+	pop_column.add_child(_event_list)
 	pop_column.add_child(HSeparator.new())
 	_job_list = VBoxContainer.new()
 	pop_column.add_child(_job_list)
@@ -252,6 +263,10 @@ func _clear(container: Container) -> void:
 # --- list building ---------------------------------------------------------
 
 func _rebuild_lists() -> void:
+	var era := EraData.current(Game.unlocked)
+	_era_label.text = "%s  -  %s  (%s)" % [era["name"], era["subtitle"], era["time"]]
+	_era_label.tooltip_text = era["concept"]
+	_rebuild_events()
 	_rebuild_click_choices()
 	_rebuild_resources()
 	_rebuild_jobs()
@@ -413,12 +428,26 @@ func _refresh() -> void:
 	var pop_text := "People: %d / %d    Idle: %d\nEating %s food/s\nTribe IQ: %.1f / %.0f    Deaths this run: %d\nAccidents: about %s per hour" % [
 		Game.population, Game.pop_cap(), Game.idle(), NumFormat.fmt(food_use),
 		Game.iq, Game.iq_cap(), Game.run_deaths, NumFormat.fmt(hourly)]
+	pop_text += "\nMorale: %.0f (work %.2fx)    Health: %.0f" % [Game.morale, Game.morale_factor(), Game.health]
+	if Game.crime_rate > 0.0:
+		pop_text += "\nCrime is stealing %.1f%% of your stockpiles per second!" % (Game.crime_rate * 100.0)
+	if Game.illness_per_hour() >= 1.0:
+		pop_text += "\nIllness: about %s deaths per hour" % NumFormat.fmt(Game.illness_per_hour())
 	if Game.starving:
 		pop_text += "\nSTARVING! Assign Gatherers or gather food."
-		_pop_label.modulate = BAD_COLOR
-	else:
-		_pop_label.modulate = Color.WHITE
+	var trouble := Game.starving or Game.morale < 30.0 or Game.health < 30.0
+	_pop_label.modulate = BAD_COLOR if trouble else Color.WHITE
 	_pop_label.text = pop_text
+
+	for row in _event_rows:
+		var ev: Dictionary = row["event"]
+		var data := EventData.find(ev["id"])
+		var left := "until fixed" if ev["remaining"] < 0.0 else NumFormat.duration(ceilf(ev["remaining"])) + " left"
+		row["label"].text = "%s (%s)" % [data["name"], left]
+		if row["fix"]:
+			var cost := Game.fix_cost(ev)
+			row["fix"].text = "%s: %s" % [data["fix"]["label"], NumFormat.cost(cost)]
+			row["fix"].disabled = not Game.can_afford(cost)
 
 	for id in _job_rows:
 		var row: Dictionary = _job_rows[id]
@@ -628,6 +657,27 @@ func _rebuild_invasions() -> void:
 		_invasion_list.add_child(conquered_header)
 		for country in done:
 			_add_wrapped(_invasion_list, "%s: %s" % [country["name"], country["reward_desc"]], GOOD_COLOR)
+
+
+func _rebuild_events() -> void:
+	_clear(_event_list)
+	_event_rows.clear()
+	for i in Game.events.size():
+		var ev: Dictionary = Game.events[i]
+		var data := EventData.find(ev["id"])
+		var label := Label.new()
+		label.modulate = GOOD_COLOR if data["good"] else BAD_COLOR
+		label.tooltip_text = data["desc"]
+		label.mouse_filter = Control.MOUSE_FILTER_PASS
+		_event_list.add_child(label)
+		var fix: Button = null
+		if data.has("fix"):
+			fix = Button.new()
+			fix.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			var index := i
+			fix.pressed.connect(func(): Game.fix_event(index))
+			_event_list.add_child(fix)
+		_event_rows.append({"event": ev, "label": label, "fix": fix})
 
 
 func _rebuild_legacy() -> void:

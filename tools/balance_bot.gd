@@ -57,6 +57,10 @@ func _think() -> void:
 		if game.tech_available(t) and game.research(t["id"]):
 			break
 	_buy_things()
+	for i in range(game.events.size() - 1, -1, -1):
+		var data := EventData.find(game.events[i]["id"])
+		if data.has("fix") and _cheap(game.fix_cost(game.events[i]), 0.5):
+			game.fix_event(i)
 	_assign_jobs()
 	for maker in GameData.MAKERS:
 		while game.maker_busy(maker["id"]) < game.maker_slots(maker["id"]) and _cheap(game.commission_cost(maker["id"]), 0.2):
@@ -91,6 +95,12 @@ func _buy_things() -> void:
 				if e["key"] == "pop_cap" and game.population >= game.pop_cap() - 2:
 					useful = true
 				if e["key"].begins_with("spoil:") and game.buildings.get(b["id"], 0) < 5:
+					useful = true
+				if e["key"] == "morale" and game.morale < 60.0 and game.buildings.get(b["id"], 0) < 8:
+					useful = true
+				if e["key"] == "health" and game.health < 60.0 and game.buildings.get(b["id"], 0) < 8:
+					useful = true
+				if e["key"] == "iq_cap" and game.iq >= game.iq_cap() - 1.0 and game.buildings.get(b["id"], 0) < 5:
 					useful = true
 			if useful and _cheap(game.building_cost(b["id"]), 0.3) and game.buy_building(b["id"]):
 				bought = true
@@ -194,5 +204,5 @@ func _report(unlocked_at: Dictionary, t: float) -> void:
 			prev = at
 		else:
 			print("  %-12s  not reached" % r["name"])
-	print("simulated %s, population %d, items %d, upgrades %d, IQ %.0f, deaths %d, legacy if reborn %d" % [
-		NumFormat.duration(t), game.population, game.total_items(), game.upgrades.size(), game.iq, game.run_deaths, game.legacy_gain()])
+	print("simulated %s, population %d, items %d, upgrades %d, IQ %.0f, morale %.0f, health %.0f, deaths %d, legacy if reborn %d" % [
+		NumFormat.duration(t), game.population, game.total_items(), game.upgrades.size(), game.iq, game.morale, game.health, game.run_deaths, game.legacy_gain()])

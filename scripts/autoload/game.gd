@@ -13,6 +13,13 @@ const BASE_IQ := 50.0
 const BASE_IQ_CAP := 60.0
 const IQ_PER_ELDER := 0.02
 const HAZARD_SCALE := 3.0
+const START_MORALE := 50.0
+const START_HEALTH := 60.0
+const GRIEF_PER_DEATH := 4.0
+const MAX_GRIEF := 40.0
+const CRIME_BELOW_MORALE := 30.0
+const ILLNESS_RATE := 0.15
+const MAX_WELLBEING_BONUS := 40.0
 const GROW_TIME := 20.0
 const FOOD_TO_GROW_PER_PERSON := 5.0
 const STARVE_TIME := 4.0
@@ -40,6 +47,15 @@ var conquered: Dictionary = {}
 var pending_invasion := ""
 var iq := BASE_IQ
 var run_deaths := 0
+var morale := START_MORALE
+var health := START_HEALTH
+var grief := 0.0
+var weariness := 0.0
+var crime_rate := 0.0
+# active event: {id, remaining (-1 = until fixed), target}
+var events: Array = []
+var events_enabled := true
+var _event_timer := EventData.MAX_GAP
 # These survive a rebirth.
 var legacy := 0
 var prestige: Dictionary = {}
@@ -86,6 +102,13 @@ func new_run() -> void:
 	conquered.clear()
 	pending_invasion = ""
 	run_deaths = 0
+	morale = START_MORALE
+	health = START_HEALTH
+	grief = 0.0
+	weariness = 0.0
+	crime_rate = 0.0
+	events.clear()
+	_event_timer = EventData.MAX_GAP
 	for r in GameData.RESOURCES:
 		amounts[r["id"]] = 0.0
 	for id in GameData.STARTING_RESOURCES:
@@ -126,6 +149,10 @@ func simulate(dt: float, offline: bool) -> void:
 	if offline:
 		return
 	_run_accidents(dt)
+	_update_wellbeing(dt)
+	_run_illness(dt)
+	_run_crime(dt)
+	_run_events(dt)
 	_apply_spoilage(dt)
 	_update_population(dt)
 	for id in amounts:
@@ -234,16 +261,276 @@ func _article(word: String) -> String:
 
 
 func _kill(job_id: String, message: String) -> void:
-	# The last survivor is spared so a run can always recover.
+	if _remove_person(job_id):
+		post(message)
+		_changed()
+
+
+# The last survivor is spared so a run can always recover.
+func _remove_person(job_id: String) -> bool:
 	if population <= 1:
-		return
+		return false
 	population -= 1
-	if job_id != "":
+	if job_id != "" and jobs.get(job_id, 0) > 0:
 		jobs[job_id] -= 1
+	elif idle() < 0:
+		_drop_busiest_job()
 	run_deaths += 1
 	total_deaths += 1
+	grief = minf(MAX_GRIEF, grief + GRIEF_PER_DEATH)
+	return true
+
+
+func _drop_busiest_job() -> void:
+	var busiest := ""
+	for id in jobs:
+		if busiest == "" or jobs[id] > jobs[busiest]:
+			busiest = id
+	if busiest != "":
+		jobs[busiest] -= 1
+
+
+# Kills n random people (workers or idle) and returns how many actually died.
+func _kill_random(n: int) -> int:
+	var died := 0
+	for i in n:
+		var pick := _rng.randi() % maxi(1, population)
+		var chosen := ""
+		for id in jobs:
+			if pick < jobs[id]:
+				chosen = id
+				break
+			pick -= jobs[id]
+		if not _remove_person(chosen):
+			break
+		died += 1
+	return died
+
+
+# --- morale, health, crime and illness -----------------------------------------
+
+# Bonuses flatten out near MAX_WELLBEING_BONUS; penalties (events) always hit in full.
+func _wellbeing_bonus(key: String) -> float:
+	var total := add(key)
+	return MAX_WELLBEING_BONUS * (1.0 - exp(-total / MAX_WELLBEING_BONUS)) if total > 0.0 else total
+
+
+func morale_target() -> float:
+	var t := START_MORALE + _wellbeing_bonus("morale") - grief - weariness
+	if starving:
+		t -= 25.0
+	if population >= 5 and population >= pop_cap() * 0.9:
+		t -= 10.0
+	return clampf(t, 0.0, 100.0)
+
+
+func health_target() -> float:
+	var t := START_HEALTH + _wellbeing_bonus("health") - 25.0 * population / maxf(1.0, pop_cap())
+	if starving:
+		t -= 20.0
+	return clampf(t, 0.0, 100.0)
+
+
+# Miserable people work at 0.6x, happy ones at 1.4x.
+func morale_factor() -> float:
+	return 0.6 + 0.8 * morale / 100.0
+
+
+func illness_per_hour() -> float:
+	return population * HAZARD_SCALE * ILLNESS_RATE * pow((100.0 - health) / 50.0, 2.0)
+
+
+func _update_wellbeing(dt: float) -> void:
+	morale = move_toward(morale, morale_target(), 2.0 * dt)
+	health = move_toward(health, health_target(), 1.0 * dt)
+	grief = maxf(0.0, grief - 0.3 * dt)
+	weariness = maxf(0.0, weariness - 0.05 * dt)
+
+
+func _run_illness(dt: float) -> void:
+	if _rng.randf() < illness_per_hour() / 3600.0 * dt and _kill_random(1) > 0:
+		post("Someone died of illness." if not has_event("plague") else "The plague claimed another life.")
+		_changed()
+
+
+# Unhappy people steal: below 30 morale a slice of every stockpile (except food) disappears.
+func _run_crime(dt: float) -> void:
+	crime_rate = 0.0
+	if morale >= CRIME_BELOW_MORALE:
+		return
+	crime_rate = (CRIME_BELOW_MORALE - morale) / CRIME_BELOW_MORALE * 0.004 * mult("crime")
+	for id in unlocked:
+		if id != "food":
+			amounts[id] *= 1.0 - crime_rate * dt
+
+
+# --- random events ---------------------------------------------------------------
+
+func has_event(id: String) -> bool:
+	for ev in events:
+		if ev["id"] == id:
+			return true
+	return false
+
+
+func _run_events(dt: float) -> void:
+	var ended: Array = []
+	for ev in events:
+		if ev["remaining"] < 0.0:
+			continue
+		ev["remaining"] -= dt
+		if ev["remaining"] <= 0.0:
+			ended.append(ev)
+	for ev in ended:
+		_end_event(ev, "%s has ended." % EventData.find(ev["id"])["name"])
+	if not events_enabled:
+		return
+	_event_timer -= dt
+	if _event_timer > 0.0:
+		return
+	_event_timer = _rng.randf_range(EventData.MIN_GAP, EventData.MAX_GAP)
+	var pool: Array = []
+	var total := 0.0
+	for e in EventData.EVENTS:
+		if not event_eligible(e):
+			continue
+		var w: float = e["weight"]
+		if not e["good"]:
+			w *= mult("bad_events")
+		if e["id"] == "plague":
+			w *= mult("plague_risk")
+		pool.append([e, w])
+		total += w
+	var pick := _rng.randf() * total
+	for entry in pool:
+		pick -= entry[1]
+		if pick <= 0.0:
+			start_event(entry[0]["id"])
+			return
+
+
+func event_eligible(e: Dictionary) -> bool:
+	if not is_unlocked(e["requires"]) or has_event(e["id"]):
+		return false
+	if e["duration"] != 0 and events.size() >= EventData.MAX_ACTIVE:
+		return false
+	var when: Dictionary = e.get("when", {})
+	if population < when.get("min_pop", 0):
+		return false
+	if morale > when.get("max_morale", 101.0) or morale < when.get("min_morale", -1.0):
+		return false
+	if health > when.get("max_health", 101.0) or health < when.get("min_health", -1.0):
+		return false
+	if when.get("starving", false) and not starving:
+		return false
+	if when.get("mine", false) and _pick_mine() == "":
+		return false
+	return true
+
+
+func _pick_mine() -> String:
+	var options: Array = []
+	for id in EventData.MINE_JOBS:
+		if jobs.get(id, 0) > 0:
+			options.append(id)
+	return options[_rng.randi() % options.size()] if not options.is_empty() else ""
+
+
+func start_event(id: String) -> void:
+	var e := EventData.find(id)
+	var target := _pick_mine() if e.get("when", {}).get("mine", false) else ""
+	var start: Dictionary = e.get("start", {})
+	var defense := 1.0
+	if start.get("raid", false):
+		defense = clampf(1.0 - jobs.get("warrior", 0) / maxf(1.0, population * 0.15), 0.2, 1.0)
+	var notes: PackedStringArray = []
+	for res in start.get("lose", {}):
+		if amounts.has(res):
+			amounts[res] *= 1.0 - start["lose"][res] * defense
+	var destroyed := _destroy_buildings(int(start.get("destroy", 0)))
+	if destroyed > 0:
+		notes.append("%d buildings destroyed" % destroyed)
+	var to_kill := roundi(population * start.get("kill", 0.0) * defense)
+	if to_kill > 0:
+		notes.append("%d died" % _kill_random(to_kill))
+	var homeless := population - pop_cap()
+	if homeless > 0:
+		notes.append("%d left homeless wandered off" % _kill_random(homeless))
+	if start.has("iq"):
+		iq += start["iq"]
+	if start.has("pop"):
+		population = mini(pop_cap(), population + maxi(1, int(population * start["pop"])))
+	if start.has("gift"):
+		for res in unlocked:
+			amounts[res] *= 1.0 + start["gift"]
+	var duration: float = e["duration"]
+	if duration != 0:
+		events.append({"id": id, "remaining": duration, "target": target})
+	var title := ("BLESSING: %s! " if e["good"] else "DISASTER: %s! ") % e["name"]
+	post(title + e["desc"] + (" (" + ", ".join(notes) + ")" if not notes.is_empty() else ""))
+	if start.get("relic", false):
+		var relic := roll_item("artisan")
+		while is_consumable(relic):
+			relic = roll_item("artisan")
+		_grant_item(relic)
+	_changed()
+
+
+# Destroys up to n random buildings (not item makers). Returns how many.
+func _destroy_buildings(n: int) -> int:
+	var destroyed := 0
+	for i in n:
+		var owned: Array = []
+		for id in buildings:
+			if buildings[id] > 0 and GameData.find("maker", id).is_empty():
+				for k in buildings[id]:
+					owned.append(id)
+		if owned.is_empty():
+			break
+		var id: String = owned[_rng.randi() % owned.size()]
+		buildings[id] -= 1
+		destroyed += 1
+	if destroyed > 0:
+		rebuild_modifiers()
+	return destroyed
+
+
+func _end_event(ev: Dictionary, message: String) -> void:
+	events.erase(ev)
 	post(message)
 	_changed()
+
+
+func fix_cost(ev: Dictionary) -> Dictionary:
+	var fix: Dictionary = EventData.find(ev["id"]).get("fix", {})
+	var cost := {}
+	for key in fix.get("pay", {}):
+		var res: String = key
+		if key == "top":
+			res = _biggest_stockpile()
+		elif key == "$target":
+			res = GameData.find("job", ev["target"])["produces"].keys()[0]
+		cost[res] = maxf(25.0, ceilf(amounts.get(res, 0.0) * fix["pay"][key]))
+	return cost
+
+
+func _biggest_stockpile() -> String:
+	var best := "wood"
+	for id in unlocked:
+		if id != "food" and amounts[id] > amounts.get(best, 0.0):
+			best = id
+	return best
+
+
+func fix_event(index: int) -> bool:
+	if index < 0 or index >= events.size():
+		return false
+	var ev: Dictionary = events[index]
+	var fix: Dictionary = EventData.find(ev["id"]).get("fix", {})
+	if fix.is_empty() or not _pay(fix_cost(ev)):
+		return false
+	_end_event(ev, "%s: %s is over." % [fix["label"], EventData.find(ev["id"])["name"]])
+	return true
 
 
 func _lose_person() -> void:
@@ -259,6 +546,7 @@ func _lose_person() -> void:
 		jobs[busiest] -= 1
 	run_deaths += 1
 	total_deaths += 1
+	grief = minf(MAX_GRIEF, grief + GRIEF_PER_DEATH)
 	post("Someone starved to death.")
 	_changed()
 
@@ -293,6 +581,11 @@ func rebuild_modifiers() -> void:
 		if level > 0:
 			for e in p["effects"]:
 				_apply_effect(e, level)
+	for ev in events:
+		for e in EventData.find(ev["id"]).get("effects", []):
+			var effect: Dictionary = e.duplicate()
+			effect["key"] = String(effect["key"]).replace("$target", ev["target"])
+			_apply_effect(effect, 1)
 
 
 func _changed() -> void:
@@ -345,7 +638,7 @@ func add(key: String) -> float:
 
 
 func job_multiplier(job_id: String) -> float:
-	return mult("job:" + job_id) * mult("job:all")
+	return mult("job:" + job_id) * mult("job:all") * morale_factor()
 
 
 func food_per_second_per_person() -> float:
@@ -429,7 +722,7 @@ func building_cost(id: String) -> Dictionary:
 	var count: int = buildings.get(id, 0)
 	var cost := {}
 	for res in b["cost"]:
-		cost[res] = ceilf(b["cost"][res] * pow(b["scale"], count))
+		cost[res] = ceilf(b["cost"][res] * pow(b["scale"], count) * mult("build_cost"))
 	return cost
 
 
@@ -498,6 +791,9 @@ func research(id: String) -> bool:
 	if t["unlocks"] != "":
 		unlocked[t["unlocks"]] = true
 	post("Discovered %s! %s" % [t["name"], t["desc"]])
+	var era := EraData.for_resource(t["unlocks"])
+	if not era.is_empty():
+		post("A new age dawns: %s, %s." % [era["name"], era["subtitle"]])
 	_changed()
 	return true
 
@@ -662,6 +958,7 @@ func start_invasion(country_id: String) -> bool:
 		return false
 	_pay(GameData.find("country", country_id)["cost"])
 	pending_invasion = country_id
+	weariness += 10.0
 	return true
 
 
@@ -671,7 +968,8 @@ func finish_invasion(won: bool) -> void:
 	if c.is_empty():
 		return
 	if not won:
-		post("The invasion of %s failed. The supplies are gone." % c["name"])
+		weariness += 20.0
+		post("The invasion of %s failed. The supplies are gone, and the people are sick of war." % c["name"])
 		return
 	conquered[c["id"]] = true
 	for res in c["loot"]:
@@ -780,6 +1078,12 @@ func to_dict() -> Dictionary:
 		"legacy": legacy,
 		"prestige": prestige.duplicate(),
 		"runs": runs,
+		"morale": morale,
+		"health": health,
+		"grief": grief,
+		"weariness": weariness,
+		"events": events.duplicate(true),
+		"event_timer": _event_timer,
 	}
 
 
@@ -803,6 +1107,14 @@ func from_dict(data: Dictionary) -> void:
 		buildings[id] = int(saved_buildings[id])
 	population = int(data.get("population", STARTING_POPULATION))
 	iq = float(data.get("iq", BASE_IQ))
+	morale = float(data.get("morale", START_MORALE))
+	health = float(data.get("health", START_HEALTH))
+	grief = float(data.get("grief", 0.0))
+	weariness = float(data.get("weariness", 0.0))
+	_event_timer = float(data.get("event_timer", EventData.MAX_GAP))
+	for ev in data.get("events", []):
+		if not EventData.find(String(ev.get("id", ""))).is_empty():
+			events.append({"id": String(ev["id"]), "remaining": float(ev["remaining"]), "target": String(ev.get("target", ""))})
 	run_deaths = int(data.get("run_deaths", 0))
 	total_deaths = int(data.get("total_deaths", 0))
 	legacy = int(data.get("legacy", 0))
