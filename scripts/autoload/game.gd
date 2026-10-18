@@ -7,9 +7,14 @@ const TICK := 0.1
 const MAX_TICKS_PER_FRAME := 50
 const BASE_POP_CAP := 5
 const STARTING_POPULATION := 3
-const STARTING_FOOD := 20.0
-const FOOD_PER_PERSON := 0.25
-const GROW_TIME := 10.0
+const STARTING_FOOD := 30.0
+const FOOD_PER_PERSON := 0.3
+const BASE_IQ := 50.0
+const BASE_IQ_CAP := 60.0
+const IQ_PER_ELDER := 0.02
+const HAZARD_SCALE := 3.0
+const GROW_TIME := 20.0
+const FOOD_TO_GROW_PER_PERSON := 5.0
 const STARVE_TIME := 4.0
 const MAX_OFFLINE_SECONDS := 8.0 * 3600.0
 const OFFLINE_CHUNK := 60.0
@@ -33,6 +38,13 @@ var crafts: Array = []
 var crafted_count: Dictionary = {}
 var conquered: Dictionary = {}
 var pending_invasion := ""
+var iq := BASE_IQ
+var run_deaths := 0
+# These survive a rebirth.
+var legacy := 0
+var prestige: Dictionary = {}
+var runs := 0
+var total_deaths := 0
 
 var _grow_progress := 0.0
 var _starve_progress := 0.0
@@ -45,7 +57,17 @@ func _ready() -> void:
 	reset()
 
 
+# Wipes everything, including Legacy and prestige upgrades.
 func reset() -> void:
+	legacy = 0
+	prestige.clear()
+	runs = 0
+	total_deaths = 0
+	new_run()
+
+
+# Starts a fresh civilisation, keeping Legacy and prestige upgrades.
+func new_run() -> void:
 	amounts.clear()
 	unlocked.clear()
 	jobs.clear()
@@ -63,15 +85,23 @@ func reset() -> void:
 	crafted_count.clear()
 	conquered.clear()
 	pending_invasion = ""
+	run_deaths = 0
 	for r in GameData.RESOURCES:
 		amounts[r["id"]] = 0.0
 	for id in GameData.STARTING_RESOURCES:
 		unlocked[id] = true
-	amounts["food"] = STARTING_FOOD
-	population = STARTING_POPULATION
+	rebuild_modifiers()
+	amounts["food"] = STARTING_FOOD + add("start_food")
+	population = STARTING_POPULATION + int(add("start_pop"))
+	iq = BASE_IQ + add("start_iq")
 	starving = false
 	_grow_progress = 0.0
 	_starve_progress = 0.0
+	for i in int(add("start_relic")):
+		var relic := roll_item("artisan")
+		while is_consumable(relic):
+			relic = roll_item("artisan")
+		items[relic] = items.get(relic, 0) + 1
 	_changed()
 
 
@@ -90,10 +120,12 @@ func _process(delta: float) -> void:
 func simulate(dt: float, offline: bool) -> void:
 	var before := amounts.duplicate()
 	_run_jobs(dt)
+	_teach(dt)
 	_run_crafts(dt)
 	_feed_population(dt, offline)
 	if offline:
 		return
+	_run_accidents(dt)
 	_apply_spoilage(dt)
 	_update_population(dt)
 	for id in amounts:
@@ -153,7 +185,8 @@ func _update_population(dt: float) -> void:
 			_lose_person()
 		return
 	_starve_progress = 0.0
-	if population <= 0 or population >= pop_cap() or amounts["food"] <= 0.0:
+	# Babies only come when there's a real food stockpile, which spoilage keeps eating.
+	if population <= 0 or population >= pop_cap() or amounts["food"] < population * FOOD_TO_GROW_PER_PERSON:
 		_grow_progress = 0.0
 		return
 	# Bigger populations grow faster so late eras are reachable.
@@ -162,6 +195,55 @@ func _update_population(dt: float) -> void:
 		_grow_progress = 0.0
 		population += 1
 		_changed()
+
+
+func _teach(dt: float) -> void:
+	var elders: int = jobs.get("elder", 0)
+	if elders > 0 and iq < iq_cap():
+		iq = minf(iq_cap(), iq + elders * IQ_PER_ELDER * mult("teaching") * dt)
+
+
+func iq_cap() -> float:
+	return BASE_IQ_CAP + add("iq_cap")
+
+
+# Smarter tribes have fewer accidents: IQ 100 is 4x safer than IQ 50.
+func accident_multiplier(job_id: String) -> float:
+	return HAZARD_SCALE * pow(BASE_IQ / maxf(iq, 1.0), 2.0) * mult("hazard") * mult("hazard:" + job_id)
+
+
+func deaths_per_hour(job_id: String) -> float:
+	if job_id == "idle":
+		return idle() * GameData.IDLE_HAZARD * accident_multiplier("idle")
+	var job := GameData.find("job", job_id)
+	return jobs.get(job_id, 0) * job.get("hazard", 0.0) * accident_multiplier(job_id)
+
+
+func _run_accidents(dt: float) -> void:
+	for job in GameData.JOBS:
+		if jobs.get(job["id"], 0) > 0 and _rng.randf() < deaths_per_hour(job["id"]) / 3600.0 * dt:
+			var reasons: Array = job["deaths"]
+			_kill(job["id"], "%s %s %s." % [_article(job["name"]), job["name"], reasons[_rng.randi() % reasons.size()]])
+	if idle() > 0 and _rng.randf() < deaths_per_hour("idle") / 3600.0 * dt:
+		var reasons: Array = GameData.IDLE_DEATHS
+		_kill("", "An idle villager %s." % reasons[_rng.randi() % reasons.size()])
+
+
+func _article(word: String) -> String:
+	return "An" if word.substr(0, 1).to_lower() in ["a", "e", "i", "o", "u"] else "A"
+
+
+func _kill(job_id: String, message: String) -> void:
+	# The last survivor is spared so a run can always recover.
+	if population <= 1:
+		return
+	population -= 1
+	if job_id != "":
+		jobs[job_id] -= 1
+	run_deaths += 1
+	total_deaths += 1
+	post(message)
+	_changed()
 
 
 func _lose_person() -> void:
@@ -175,6 +257,8 @@ func _lose_person() -> void:
 			if busiest == "" or jobs[id] > jobs[busiest]:
 				busiest = id
 		jobs[busiest] -= 1
+	run_deaths += 1
+	total_deaths += 1
 	post("Someone starved to death.")
 	_changed()
 
@@ -204,6 +288,11 @@ func rebuild_modifiers() -> void:
 		if conquered.has(c["id"]):
 			for e in c["effects"]:
 				_apply_effect(e, 1)
+	for p in GameData.PRESTIGE:
+		var level: int = prestige.get(p["id"], 0)
+		if level > 0:
+			for e in p["effects"]:
+				_apply_effect(e, level)
 
 
 func _changed() -> void:
@@ -591,6 +680,52 @@ func finish_invasion(won: bool) -> void:
 	_changed()
 
 
+# --- rebirth -------------------------------------------------------------------
+
+func legacy_gain() -> int:
+	var gain := 0
+	for id in unlocked:
+		gain += GameData.ERA_LEGACY.get(id, 0)
+	gain += conquered.size() * GameData.LEGACY_PER_CONQUEST
+	gain += deaths_legacy()
+	return gain
+
+
+# Grows with the square root of deaths: 100 deaths = 5 Legacy, 2,500 = 25.
+func deaths_legacy() -> int:
+	return int(sqrt(run_deaths) / 2.0)
+
+
+func rebirth() -> int:
+	var gain := legacy_gain()
+	if gain <= 0:
+		return 0
+	legacy += gain
+	runs += 1
+	new_run()
+	post("Your civilisation is reborn. +%d Legacy (%d total). Run %d begins." % [gain, legacy, runs + 1])
+	return gain
+
+
+func prestige_cost(id: String) -> int:
+	var p := GameData.find("prestige", id)
+	return int(p["cost"] * pow(p["growth"], prestige.get(id, 0)))
+
+
+func can_buy_prestige(id: String) -> bool:
+	var p := GameData.find("prestige", id)
+	return not p.is_empty() and prestige.get(id, 0) < p["max"] and legacy >= prestige_cost(id)
+
+
+func buy_prestige(id: String) -> bool:
+	if not can_buy_prestige(id):
+		return false
+	legacy -= prestige_cost(id)
+	prestige[id] = prestige.get(id, 0) + 1
+	_changed()
+	return true
+
+
 const MESSAGE_HISTORY := 5
 var recent_messages: PackedStringArray = []
 
@@ -639,6 +774,12 @@ func to_dict() -> Dictionary:
 		"crafted_count": crafted_count.duplicate(),
 		"conquered": conquered.keys(),
 		"consumables": consumables.duplicate(),
+		"iq": iq,
+		"run_deaths": run_deaths,
+		"total_deaths": total_deaths,
+		"legacy": legacy,
+		"prestige": prestige.duplicate(),
+		"runs": runs,
 	}
 
 
@@ -661,6 +802,15 @@ func from_dict(data: Dictionary) -> void:
 	for id in saved_buildings:
 		buildings[id] = int(saved_buildings[id])
 	population = int(data.get("population", STARTING_POPULATION))
+	iq = float(data.get("iq", BASE_IQ))
+	run_deaths = int(data.get("run_deaths", 0))
+	total_deaths = int(data.get("total_deaths", 0))
+	legacy = int(data.get("legacy", 0))
+	runs = int(data.get("runs", 0))
+	var saved_prestige: Dictionary = data.get("prestige", {})
+	for id in saved_prestige:
+		if not GameData.find("prestige", id).is_empty():
+			prestige[id] = int(saved_prestige[id])
 	var saved_lifetime: Dictionary = data.get("lifetime", {})
 	for id in saved_lifetime:
 		lifetime[id] = float(saved_lifetime[id])

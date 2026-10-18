@@ -16,6 +16,13 @@ var _upgrade_list: VBoxContainer
 var _craft_list: VBoxContainer
 var _invasion_list: VBoxContainer
 var _invade_button: Button
+var _legacy_list: VBoxContainer
+var _rebirth_button: Button
+var _prestige_buttons: Dictionary = {}
+var _confirm_rebirth: ConfirmationDialog
+var _click_button: Button
+var _click_choice: OptionButton
+var _click_ids: Array = []
 var _log_label: Label
 var _confirm_wipe: ConfirmationDialog
 
@@ -77,6 +84,7 @@ func _build_layout() -> void:
 	root.add_child(_columns)
 
 	_resource_list = _make_panel("Resources", 1.0)
+	_build_click_area(_resource_list.get_parent().get_parent())
 
 	var pop_column := _make_panel("Population", 1.2)
 	_pop_label = Label.new()
@@ -88,14 +96,15 @@ func _build_layout() -> void:
 	var tabs := TabContainer.new()
 	tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tabs.size_flags_stretch_ratio = 1.4
-	tabs.custom_minimum_size.x = 450
-	tabs.add_theme_font_size_override("font_size", 15)
+	tabs.clip_tabs = false
+	tabs.add_theme_font_size_override("font_size", 14)
 	_columns.add_child(tabs)
 	_tech_list = _make_tab(tabs, "Discoveries")
 	_building_list = _make_tab(tabs, "Buildings")
 	_upgrade_list = _make_tab(tabs, "Upgrades")
 	_craft_list = _make_tab(tabs, "Crafting")
 	_invasion_list = _make_tab(tabs, "Invasions")
+	_legacy_list = _make_tab(tabs, "Legacy")
 
 	var bottom := HBoxContainer.new()
 	root.add_child(bottom)
@@ -116,9 +125,78 @@ func _build_layout() -> void:
 	bottom.add_child(wipe_button)
 
 	_confirm_wipe = ConfirmationDialog.new()
-	_confirm_wipe.dialog_text = "Delete your save and start over?"
+	_confirm_wipe.dialog_text = "Delete your save and start over? This also deletes your Legacy."
 	_confirm_wipe.confirmed.connect(SaveManager.wipe)
 	add_child(_confirm_wipe)
+
+	_confirm_rebirth = ConfirmationDialog.new()
+	_confirm_rebirth.confirmed.connect(func(): Game.rebirth())
+	add_child(_confirm_rebirth)
+
+
+# The big Cookie Clicker button. Art: assets/Click.png (placeholder until then).
+func _build_click_area(panel_box: VBoxContainer) -> void:
+	var area := VBoxContainer.new()
+	panel_box.add_child(area)
+	panel_box.move_child(area, 1)
+	_click_button = Button.new()
+	_click_button.custom_minimum_size = Vector2(0, 110)
+	_click_button.add_theme_font_size_override("font_size", 22)
+	var art := Assets.texture("Click")
+	if art:
+		_click_button.icon = art
+		_click_button.expand_icon = true
+		_click_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_click_button.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+	_click_button.pressed.connect(_on_big_click)
+	area.add_child(_click_button)
+	var row := HBoxContainer.new()
+	area.add_child(row)
+	var label := Label.new()
+	label.text = "Gathering:"
+	row.add_child(label)
+	_click_choice = OptionButton.new()
+	_click_choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_click_choice.item_selected.connect(func(_i): _refresh())
+	row.add_child(_click_choice)
+	area.add_child(HSeparator.new())
+
+
+func _clicked_resource() -> String:
+	var i := _click_choice.selected
+	return _click_ids[i] if i >= 0 and i < _click_ids.size() else "wood"
+
+
+func _on_big_click() -> void:
+	var gained := Game.click_gather(_clicked_resource())
+	if gained <= 0.0:
+		return
+	var pop := Label.new()
+	pop.text = "+%s" % NumFormat.fmt(gained)
+	pop.add_theme_font_size_override("font_size", 20)
+	pop.modulate = GOOD_COLOR
+	pop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_click_button.add_child(pop)
+	var local := _click_button.get_local_mouse_position().clamp(Vector2(20, 30), _click_button.size - Vector2(40, 10))
+	pop.position = local - Vector2(10, 20)
+	var tween := pop.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(pop, "position:y", pop.position.y - 50, 0.7)
+	tween.tween_property(pop, "modulate:a", 0.0, 0.7)
+	tween.chain().tween_callback(pop.queue_free)
+	_refresh()
+
+
+func _rebuild_click_choices() -> void:
+	var keep := _clicked_resource() if not _click_ids.is_empty() else "wood"
+	_click_ids.clear()
+	_click_choice.clear()
+	for r in GameData.RESOURCES:
+		if r.get("clickable", false) and Game.is_unlocked(r["id"]):
+			_click_ids.append(r["id"])
+			_click_choice.add_item(r["name"])
+	var index := _click_ids.find(keep)
+	_click_choice.select(index if index >= 0 else 0)
 
 
 func _make_panel(title: String, ratio: float) -> VBoxContainer:
@@ -174,11 +252,13 @@ func _clear(container: Container) -> void:
 # --- list building ---------------------------------------------------------
 
 func _rebuild_lists() -> void:
+	_rebuild_click_choices()
 	_rebuild_resources()
 	_rebuild_jobs()
 	_rebuild_shop()
 	_rebuild_crafting()
 	_rebuild_invasions()
+	_rebuild_legacy()
 	_refresh()
 
 
@@ -202,11 +282,6 @@ func _rebuild_resources() -> void:
 		row.add_child(amount)
 		var rate := Label.new()
 		row.add_child(rate)
-		if r.get("clickable", false):
-			var button := Button.new()
-			button.text = "Gather"
-			button.pressed.connect(func(): Game.click_gather(id); _refresh())
-			row.add_child(button)
 		_resource_list.add_child(row)
 		_resource_rows[id] = {"amount": amount, "rate": rate}
 
@@ -325,9 +400,19 @@ func _refresh() -> void:
 		row["rate"].text = text
 		row["rate"].modulate = BAD_COLOR if rate < -0.005 else (GOOD_COLOR if rate > 0.005 else Color.WHITE)
 
+	var res_name := GameData.resource_name(_clicked_resource())
+	var per_click := Game.mult("click") * Game.mult("click:" + _clicked_resource()) \
+		+ Game.add("click_cps") * Game.production_per_second(_clicked_resource())
+	_click_button.text = "Gather %s\n+%s per click" % [res_name, NumFormat.fmt(per_click)]
+
 	var food_use := Game.population * Game.food_per_second_per_person()
-	var pop_text := "People: %d / %d    Idle: %d\nEating %s food/s" % [
-		Game.population, Game.pop_cap(), Game.idle(), NumFormat.fmt(food_use)]
+	var hourly := 0.0
+	for job in GameData.JOBS:
+		hourly += Game.deaths_per_hour(job["id"])
+	hourly += Game.deaths_per_hour("idle")
+	var pop_text := "People: %d / %d    Idle: %d\nEating %s food/s\nTribe IQ: %.1f / %.0f    Deaths this run: %d\nAccidents: about %s per hour" % [
+		Game.population, Game.pop_cap(), Game.idle(), NumFormat.fmt(food_use),
+		Game.iq, Game.iq_cap(), Game.run_deaths, NumFormat.fmt(hourly)]
 	if Game.starving:
 		pop_text += "\nSTARVING! Assign Gatherers or gather food."
 		_pop_label.modulate = BAD_COLOR
@@ -352,6 +437,21 @@ func _refresh() -> void:
 
 	if _available_signature() != _shop_signature:
 		_rebuild_shop()
+
+	if _rebirth_button:
+		var gain := Game.legacy_gain()
+		_rebirth_button.text = "Rebirth for +%d Legacy" % gain
+		_rebirth_button.disabled = gain <= 0
+	for id in _prestige_buttons:
+		var p := GameData.find("prestige", id)
+		var level: int = Game.prestige.get(id, 0)
+		var button: Button = _prestige_buttons[id]
+		if level >= p["max"]:
+			button.text = "%s (max %d/%d)\n%s" % [p["name"], level, p["max"], p["desc"]]
+			button.disabled = true
+		else:
+			button.text = "%s (%d/%d)\n%s\nCost: %d Legacy" % [p["name"], level, p["max"], p["desc"], Game.prestige_cost(id)]
+			button.disabled = not Game.can_buy_prestige(id)
 
 	if _invade_button:
 		var c := Game.next_country()
@@ -528,6 +628,41 @@ func _rebuild_invasions() -> void:
 		_invasion_list.add_child(conquered_header)
 		for country in done:
 			_add_wrapped(_invasion_list, "%s: %s" % [country["name"], country["reward_desc"]], GOOD_COLOR)
+
+
+func _rebuild_legacy() -> void:
+	_clear(_legacy_list)
+	_prestige_buttons.clear()
+	var header := Label.new()
+	header.text = "Legacy: %d    (run %d)" % [Game.legacy, Game.runs + 1]
+	header.add_theme_font_size_override("font_size", 18)
+	_legacy_list.add_child(header)
+	_add_wrapped(_legacy_list, "Rebirth ends this civilisation and starts a new one. You keep Legacy and these upgrades; everything else resets.", Color(1, 1, 1, 0.7))
+	var parts: PackedStringArray = []
+	for id in Game.unlocked:
+		if GameData.ERA_LEGACY.has(id):
+			parts.append("%s +%d" % [GameData.resource_name(id), GameData.ERA_LEGACY[id]])
+	if not Game.conquered.is_empty():
+		parts.append("conquests +%d" % (Game.conquered.size() * GameData.LEGACY_PER_CONQUEST))
+	if Game.deaths_legacy() > 0:
+		parts.append("%d deaths +%d" % [Game.run_deaths, Game.deaths_legacy()])
+	_add_wrapped(_legacy_list, "This run is worth: " + (", ".join(parts) if not parts.is_empty() else "nothing yet (unlock Stone first)"), GOOD_COLOR)
+	_rebirth_button = Button.new()
+	_rebirth_button.pressed.connect(func():
+		_confirm_rebirth.dialog_text = "End this civilisation for +%d Legacy?\nResources, people, buildings, upgrades, items and conquests reset." % Game.legacy_gain()
+		_confirm_rebirth.popup_centered())
+	_legacy_list.add_child(_rebirth_button)
+	_legacy_list.add_child(HSeparator.new())
+	for p in GameData.PRESTIGE:
+		var id: String = p["id"]
+		var button := Button.new()
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.icon = Assets.texture(p["name"])
+		button.add_theme_constant_override("icon_max_width", 32)
+		button.pressed.connect(func(): Game.buy_prestige(id))
+		_legacy_list.add_child(button)
+		_prestige_buttons[id] = button
 
 
 func _add_wrapped(list: VBoxContainer, text: String, color: Color) -> void:

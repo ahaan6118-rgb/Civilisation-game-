@@ -34,6 +34,8 @@ func _sim(seconds: float, offline := false) -> void:
 func _run() -> void:
 	_game = root.get_node("Game")
 	_game.set_process(false)
+	root.get_node("SaveManager").set_process(false)
+	_game._rng.seed = 12345
 
 	print("starting state")
 	_game.reset()
@@ -62,11 +64,11 @@ func _run() -> void:
 	_check(is_equal_approx(_game.amounts["food"], 1000.0), "no spoilage offline")
 	_sim(10.0)
 	var food: float = _game.amounts["food"]
-	_check(food < 960.0 and food > 945.0, "about 5%% rots in 10s online (%.1f left)" % food)
+	_check(food < 910.0 and food > 900.0, "about 10%% rots in 10s online (%.1f left)" % food)
 	_game.amounts["food"] = 10.0
 	_sim(1.0)
 	var small_loss: float = 10.0 - _game.amounts["food"]
-	_check(small_loss < 0.06, "small stockpiles rot slowly (lost %.4f)" % small_loss)
+	_check(small_loss < 0.11, "small stockpiles rot slowly (lost %.4f)" % small_loss)
 
 	print("starvation and growth")
 	_game.reset()
@@ -75,7 +77,7 @@ func _run() -> void:
 	_check(_game.population == 2, "a person starves without food")
 	_game.reset()
 	_game.amounts["food"] = 100.0
-	_sim(12.0)
+	_sim(25.0)
 	_check(_game.population == 4, "population grows with food")
 
 	print("unlocking stone")
@@ -258,6 +260,61 @@ func _run() -> void:
 	_game.reset()
 	_game.from_dict(conquest_save)
 	_check(_game.conquered.has("ugs_tribe"), "conquests saved")
+
+	print("accidents and IQ")
+	_game.reset()
+	_game.population = 30
+	_game.amounts["food"] = 1e6
+	_game.assign_job("woodcutter", 30)
+	var hourly: float = _game.deaths_per_hour("woodcutter")
+	_check(is_equal_approx(hourly, 450.0), "30 woodcutters at IQ 50: 450 deaths/hour (%.1f)" % hourly)
+	_game.iq = 100.0
+	_check(is_equal_approx(_game.deaths_per_hour("woodcutter"), 112.5), "IQ 100 is 4x safer")
+	_game.iq = 50.0
+	var before_deaths: int = _game.run_deaths
+	_sim(120.0)
+	_check(_game.run_deaths > before_deaths and _game.population < 30, "woodcutters die over two minutes (%d deaths)" % (_game.run_deaths - before_deaths))
+	_check(_game.jobs["woodcutter"] + _game.idle() == _game.population, "dead workers leave their job")
+	_game.reset()
+	_game.population = 2
+	_game.assign_job("woodcutter", 2)
+	for i in 50:
+		_game._kill("woodcutter", "test")
+	_check(_game.population == 1, "the last survivor is spared")
+	_game.reset()
+	_game.population = 5
+	_game.assign_job("elder", 2)
+	_game.amounts["food"] = 1e4
+	_game.simulate(100.0, true)
+	_check(is_equal_approx(_game.iq, 54.0), "2 elders teach +4 IQ in 100s (%.1f)" % _game.iq)
+	_game.simulate(1000.0, true)
+	_check(is_equal_approx(_game.iq, _game.iq_cap()), "IQ stops at the cap (%.0f)" % _game.iq_cap())
+	_game.upgrades["fire_is_hot"] = true
+	_game.rebuild_modifiers()
+	_check(_game.iq_cap() == 70.0, "lessons raise the IQ cap")
+
+	print("rebirth")
+	_game.reset()
+	_check(_game.legacy_gain() == 0, "no legacy for a fresh run")
+	_game.unlocked["stone"] = true
+	_game.unlocked["clay"] = true
+	_game.conquered["ugs_tribe"] = true
+	_game.run_deaths = 100
+	_check(_game.legacy_gain() == 1 + 2 + 3 + 5, "legacy from eras, conquest and deaths (%d)" % _game.legacy_gain())
+	_game.items = {"lucky_pebble": 1}
+	_check(_game.rebirth() == 11 and _game.legacy == 11 and _game.runs == 1, "rebirth pays out")
+	_check(not _game.is_unlocked("stone") and _game.items.is_empty() and _game.conquered.is_empty(), "rebirth resets the run")
+	_check(_game.buy_prestige("ancestral_wisdom") and _game.legacy == 10, "buy Ancestral Wisdom for 1")
+	_check(_game.prestige_cost("ancestral_wisdom") == 2, "next level costs 2")
+	_check(_game.buy_prestige("heirloom") and _game.legacy == 5, "buy Heirloom for 5")
+	_game.new_run()
+	_check(_game.iq == 60.0 and _game.iq_cap() == 70.0, "Ancestral Wisdom raises starting IQ and cap")
+	_check(_game.total_items() == 1, "Heirloom starts the run with a relic")
+	var legacy_save: Dictionary = JSON.parse_string(JSON.stringify(_game.to_dict()))
+	_game.reset()
+	_check(_game.legacy == 0 and _game.prestige.is_empty(), "wipe clears legacy")
+	_game.from_dict(legacy_save)
+	_check(_game.legacy == 5 and _game.prestige.get("heirloom", 0) == 1 and _game.runs == 1, "legacy and prestige saved")
 
 	print("number formatting")
 	_check(NumFormat.fmt(999) == "999", "999")

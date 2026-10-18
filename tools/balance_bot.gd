@@ -7,6 +7,7 @@ const THINK_EVERY := 10.0
 
 var game: Node
 var hours := 40.0
+var _snapshots := {}
 
 
 func _initialize() -> void:
@@ -36,6 +37,7 @@ func _run(seed_value: int) -> void:
 		for r in GameData.RESOURCES:
 			if game.is_unlocked(r["id"]) and not unlocked_at.has(r["id"]):
 				unlocked_at[r["id"]] = t
+				_snapshots[r["id"]] = [game.population, game.run_deaths]
 		if game.is_unlocked("dark_matter") and t - unlocked_at["dark_matter"] > 600.0:
 			break
 	_report(unlocked_at, t)
@@ -125,8 +127,11 @@ func _assign_jobs() -> void:
 	var gatherers := mini(pop, ceili(food_need * 1.15 / per_gatherer) + 1)
 	if game.amounts["food"] < 50.0:
 		gatherers = mini(pop, gatherers + 2)
-	var free := pop - gatherers
-	var plan := {"gatherer": gatherers}
+	var elders := 0
+	if pop >= 4 and game.iq < game.iq_cap() - 0.5:
+		elders = maxi(1, pop / 10)
+	var free := pop - gatherers - elders
+	var plan := {"gatherer": gatherers, "elder": elders}
 	# Most workers go to whatever the next discovery costs (plus that job's inputs);
 	# the rest are shared out so buildings and upgrades stay affordable.
 	var main := _job_for(_target_resource())
@@ -134,9 +139,9 @@ func _assign_jobs() -> void:
 	_staff(plan, main, focus)
 	var others: Array = []
 	for job in GameData.JOBS:
-		if game.job_available(job) and job["id"] != "gatherer" and job["id"] != "warrior" and not job.get("consumes", {}).size() > 0:
+		if game.job_available(job) and not job["id"] in ["gatherer", "warrior", "elder"] and not job.get("consumes", {}).size() > 0:
 			others.append(job)
-	var rest := free - _total(plan) + gatherers
+	var rest := free - _total(plan) + gatherers + elders
 	var k := 0
 	while rest > 0 and not others.is_empty():
 		var job: Dictionary = others[k % others.size()]
@@ -184,8 +189,10 @@ func _report(unlocked_at: Dictionary, t: float) -> void:
 	for r in GameData.RESOURCES:
 		if unlocked_at.has(r["id"]):
 			var at: float = unlocked_at[r["id"]]
-			print("  %-12s %9s   (+%s)" % [r["name"], NumFormat.duration(at), NumFormat.duration(at - prev)])
+			var snap: Array = _snapshots.get(r["id"], [0, 0])
+			print("  %-12s %9s   (+%s)   people %d, deaths so far %d" % [r["name"], NumFormat.duration(at), NumFormat.duration(at - prev), snap[0], snap[1]])
 			prev = at
 		else:
 			print("  %-12s  not reached" % r["name"])
-	print("simulated %s, population %d, items %d, upgrades %d" % [NumFormat.duration(t), game.population, game.total_items(), game.upgrades.size()])
+	print("simulated %s, population %d, items %d, upgrades %d, IQ %.0f, deaths %d, legacy if reborn %d" % [
+		NumFormat.duration(t), game.population, game.total_items(), game.upgrades.size(), game.iq, game.run_deaths, game.legacy_gain()])

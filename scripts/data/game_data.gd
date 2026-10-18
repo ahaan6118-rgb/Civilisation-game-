@@ -3,7 +3,7 @@ extends RefCounted
 
 # spoil = fraction of the stockpile lost per second (only while the game is open).
 const RESOURCES := [
-	{"id": "food", "name": "Food", "spoil": 0.005, "clickable": true},
+	{"id": "food", "name": "Food", "spoil": 0.01, "clickable": true},
 	{"id": "wood", "name": "Wood", "clickable": true},
 	{"id": "stone", "name": "Stone", "clickable": true},
 	{"id": "clay", "name": "Clay", "clickable": true},
@@ -55,31 +55,50 @@ const TECHS := [
 ]
 
 # Rates are per worker per second. A job appears once its "requires" resource (and "requires_tech", if any) is unlocked.
+# "hazard" is relative deaths per worker per hour; Game.HAZARD_SCALE and IQ scale it (see Game.accident_multiplier).
+# "deaths" are the log messages.
 const JOBS := [
-	{"id": "gatherer", "name": "Gatherer", "requires": "food", "produces": {"food": 0.5}},
-	{"id": "woodcutter", "name": "Woodcutter", "requires": "wood", "produces": {"wood": 1.0}},
-	{"id": "quarrier", "name": "Quarrier", "requires": "stone", "produces": {"stone": 1.0}},
-	{"id": "clay_digger", "name": "Clay Digger", "requires": "clay", "produces": {"clay": 4.0}},
+	{"id": "elder", "name": "Elder", "requires": "wood", "produces": {}, "note": "Raises Tribe IQ",
+		"hazard": 0.5, "deaths": ["forgot to breathe", "told one story too many"]},
+	{"id": "gatherer", "name": "Gatherer", "requires": "food", "produces": {"food": 0.45},
+		"hazard": 3, "deaths": ["ate the wrong berries", "was eaten by a bear", "picked a fight with a goose and lost"]},
+	{"id": "woodcutter", "name": "Woodcutter", "requires": "wood", "produces": {"wood": 1.0},
+		"hazard": 5, "deaths": ["had a tree fall on them", "chopped the branch they were sitting on", "hugged a tree too hard"]},
+	{"id": "quarrier", "name": "Quarrier", "requires": "stone", "produces": {"stone": 1.0},
+		"hazard": 6, "deaths": ["fell off a cliff", "was flattened by a boulder", "licked a strange rock"]},
+	{"id": "clay_digger", "name": "Clay Digger", "requires": "clay", "produces": {"clay": 4.0},
+		"hazard": 4, "deaths": ["drowned in a mud pit", "dug straight down and couldn't get out"]},
 	{"id": "warrior", "name": "Warrior", "requires": "clay", "requires_tech": "warfare", "produces": {}, "consumes": {"food": 0.25},
-		"note": "+50 troops"},
-	{"id": "copper_miner", "name": "Copper Miner", "requires": "copper", "produces": {"copper": 15.0}},
-	{"id": "bronzesmith", "name": "Bronzesmith", "requires": "bronze", "produces": {"bronze": 40.0}, "consumes": {"copper": 20.0}},
-	{"id": "iron_miner", "name": "Iron Miner", "requires": "iron", "produces": {"iron": 150.0}},
-	{"id": "coal_miner", "name": "Coal Miner", "requires": "coal", "produces": {"coal": 600.0}},
-	{"id": "steelworker", "name": "Steelworker", "requires": "steel", "produces": {"steel": 2000.0}, "consumes": {"iron": 500.0, "coal": 500.0}},
-	{"id": "oil_driller", "name": "Oil Driller", "requires": "oil", "produces": {"oil": 8000.0}},
-	{"id": "power_plant_operator", "name": "Power Plant Operator", "requires": "electricity", "produces": {"electricity": 3e4}, "consumes": {"coal": 2000.0}},
-	{"id": "chip_maker", "name": "Chip Maker", "requires": "silicon", "produces": {"silicon": 1.2e5}, "consumes": {"electricity": 2e4}},
-	{"id": "uranium_miner", "name": "Uranium Miner", "requires": "uranium", "produces": {"uranium": 5e5}},
-	{"id": "physicist", "name": "Physicist", "requires": "antimatter", "produces": {"antimatter": 2e6}, "consumes": {"electricity": 1e5}},
-	{"id": "void_engineer", "name": "Void Engineer", "requires": "dark_matter", "produces": {"dark_matter": 1e7}, "consumes": {"antimatter": 1e6}},
+		"note": "+50 troops", "hazard": 4, "deaths": ["tripped onto their own spear", "challenged a mammoth to a duel"]},
+	{"id": "copper_miner", "name": "Copper Miner", "requires": "copper", "produces": {"copper": 15.0},
+		"hazard": 5, "deaths": ["was buried in a cave-in", "got lost in the mine"]},
+	{"id": "bronzesmith", "name": "Bronzesmith", "requires": "bronze", "produces": {"bronze": 40.0}, "consumes": {"copper": 20.0},
+		"hazard": 4, "deaths": ["dropped molten bronze on their foot", "tried to taste the alloy"]},
+	{"id": "iron_miner", "name": "Iron Miner", "requires": "iron", "produces": {"iron": 150.0},
+		"hazard": 6, "deaths": ["was buried in a cave-in", "fell down a mine shaft"]},
+	{"id": "coal_miner", "name": "Coal Miner", "requires": "coal", "produces": {"coal": 600.0},
+		"hazard": 8, "deaths": ["breathed too much coal dust", "lit a torch next to the gas pocket"]},
+	{"id": "steelworker", "name": "Steelworker", "requires": "steel", "produces": {"steel": 2000.0}, "consumes": {"iron": 500.0, "coal": 500.0},
+		"hazard": 6, "deaths": ["fell into the furnace", "was crushed by a steel beam"]},
+	{"id": "oil_driller", "name": "Oil Driller", "requires": "oil", "produces": {"oil": 8000.0},
+		"hazard": 5, "deaths": ["was hit by a gusher", "slipped on the oil"]},
+	{"id": "power_plant_operator", "name": "Power Plant Operator", "requires": "electricity", "produces": {"electricity": 3e4}, "consumes": {"coal": 2000.0},
+		"hazard": 4, "deaths": ["licked a power line", "tried to fix it while it was on"]},
+	{"id": "chip_maker", "name": "Chip Maker", "requires": "silicon", "produces": {"silicon": 1.2e5}, "consumes": {"electricity": 2e4},
+		"hazard": 2, "deaths": ["got lost in a clean room", "stared at the screen until they forgot to eat"]},
+	{"id": "uranium_miner", "name": "Uranium Miner", "requires": "uranium", "produces": {"uranium": 5e5},
+		"hazard": 8, "deaths": ["started glowing", "kept a rock as a pet"]},
+	{"id": "physicist", "name": "Physicist", "requires": "antimatter", "produces": {"antimatter": 2e6}, "consumes": {"electricity": 1e5},
+		"hazard": 6, "deaths": ["touched the antimatter", "divided by zero"]},
+	{"id": "void_engineer", "name": "Void Engineer", "requires": "dark_matter", "produces": {"dark_matter": 1e7}, "consumes": {"antimatter": 1e6},
+		"hazard": 10, "deaths": ["stared into the void too long", "was folded into another dimension"]},
 ]
 
 # Effects: {"key": k, "add": n} adds n per copy; {"key": k, "mult": m} multiplies by m per copy;
 # {"key": k, "per": counter, "pct": p} multiplies by (1 + p * counter), see Game.count_of() for counters.
 # Keys: pop_cap, growth, click, click:<resource>, click_cps (click also gives this fraction of the
 # resource's production/s), job:<job>, job:all, spoil:<resource>, food_use, craft_speed, luck, auto_craft,
-# army:size, army:regen, army:attack.
+# army:size, army:regen, army:attack, iq_cap, teaching, hazard, hazard:<job or idle>.
 const BUILDINGS := [
 	{"id": "hut", "name": "Hut", "requires": "wood", "cost": {"wood": 15.0}, "scale": 1.15,
 		"desc": "+3 max population.", "effects": [{"key": "pop_cap", "add": 3}]},
@@ -89,6 +108,12 @@ const BUILDINGS := [
 		"desc": "+8 max population.", "effects": [{"key": "pop_cap", "add": 8}]},
 	{"id": "brick_house", "name": "Brick House", "requires": "clay", "cost": {"clay": 1500.0}, "scale": 1.15,
 		"desc": "+20 max population.", "effects": [{"key": "pop_cap", "add": 20}]},
+	{"id": "school", "name": "School", "requires": "clay", "cost": {"wood": 2000.0, "clay": 500.0}, "scale": 1.6,
+		"desc": "+10 Tribe IQ cap.", "effects": [{"key": "iq_cap", "add": 10}]},
+	{"id": "library", "name": "Library", "requires": "iron", "cost": {"iron": 2e5, "clay": 1e6}, "scale": 1.6,
+		"desc": "+20 Tribe IQ cap.", "effects": [{"key": "iq_cap", "add": 20}]},
+	{"id": "university", "name": "University", "requires": "electricity", "cost": {"electricity": 1e10, "steel": 1e10}, "scale": 1.6,
+		"desc": "+40 Tribe IQ cap.", "effects": [{"key": "iq_cap", "add": 40}]},
 	{"id": "artisan", "name": "Artisan", "requires": "clay", "cost": {"wood": 100.0, "stone": 2000.0, "clay": 300.0}, "scale": 1.5,
 		"desc": "Crafts random items. Each Artisan works on one commission at a time.", "effects": []},
 	{"id": "blacksmith", "name": "Blacksmith", "requires": "bronze", "cost": {"stone": 1e6, "copper": 2e5, "bronze": 5e4}, "scale": 1.5,
@@ -134,6 +159,42 @@ const UPGRADES := [
 		"desc": "Food spoils 75% slower.", "effects": [{"key": "spoil:food", "mult": 0.25}]},
 	{"id": "automation", "name": "Automation", "requires": "silicon", "cost": {"silicon": 1e11},
 		"desc": "All workers produce 5x.", "effects": [{"key": "job:all", "mult": 5.0}]},
+
+
+	# lessons: raise the Tribe IQ cap and cut specific accidents
+	{"id": "fire_is_hot", "name": "Fire Is Hot", "requires": "wood", "cost": {"wood": 100.0, "food": 50.0}, "unlock": [{"job": "elder", "count": 1}],
+		"desc": "+10 IQ cap, all accidents 20% rarer.", "flavor": "",
+		"effects": [{"key": "iq_cap", "add": 10}, {"key": "hazard", "mult": 0.8}]},
+	{"id": "not_all_berries", "name": "Not All Berries Are Food", "requires": "wood", "cost": {"food": 150.0, "wood": 100.0}, "unlock": [{"job": "gatherer", "count": 3}],
+		"desc": "+10 IQ cap, Gatherer accidents halved.", "flavor": "",
+		"effects": [{"key": "iq_cap", "add": 10}, {"key": "hazard:gatherer", "mult": 0.5}]},
+	{"id": "dont_stand_under_trees", "name": "Don't Stand Under Falling Trees", "requires": "wood", "cost": {"wood": 300.0}, "unlock": [{"job": "woodcutter", "count": 3}],
+		"desc": "+10 IQ cap, Woodcutter accidents halved.", "flavor": "",
+		"effects": [{"key": "iq_cap", "add": 10}, {"key": "hazard:woodcutter", "mult": 0.5}]},
+	{"id": "cliffs_are_bad", "name": "Cliffs Are Bad", "requires": "stone", "cost": {"stone": 300.0, "food": 200.0}, "unlock": [{"job": "quarrier", "count": 3}],
+		"desc": "+10 IQ cap, Quarrier and idle accidents halved.", "flavor": "",
+		"effects": [{"key": "iq_cap", "add": 10}, {"key": "hazard:quarrier", "mult": 0.5}, {"key": "hazard:idle", "mult": 0.5}]},
+	{"id": "mud_is_not_water", "name": "Mud Is Not Water", "requires": "clay", "cost": {"clay": 800.0}, "unlock": [{"job": "clay_digger", "count": 3}],
+		"desc": "+10 IQ cap, Clay Digger accidents halved.", "flavor": "",
+		"effects": [{"key": "iq_cap", "add": 10}, {"key": "hazard:clay_digger", "mult": 0.5}]},
+	{"id": "writing", "name": "Writing", "requires": "clay", "cost": {"clay": 3000.0, "stone": 5000.0}, "unlock": [{"job": "elder", "count": 3}],
+		"desc": "+20 IQ cap, Elders teach 1.5x faster.", "flavor": "",
+		"effects": [{"key": "iq_cap", "add": 20}, {"key": "teaching", "mult": 1.5}]},
+	{"id": "pointy_end_out", "name": "Pointy End Goes Outward", "requires": "clay", "cost": {"stone": 2000.0}, "unlock": [{"job": "warrior", "count": 3}],
+		"desc": "+10 IQ cap, Warrior accidents halved.", "flavor": "",
+		"effects": [{"key": "iq_cap", "add": 10}, {"key": "hazard:warrior", "mult": 0.5}]},
+	{"id": "mine_supports", "name": "Mine Supports", "requires": "copper", "cost": {"copper": 2e4, "wood": 1e5}, "unlock": [{"job": "copper_miner", "count": 5}],
+		"desc": "+10 IQ cap, all miner accidents halved.", "flavor": "",
+		"effects": [{"key": "iq_cap", "add": 10}, {"key": "hazard:copper_miner", "mult": 0.5}, {"key": "hazard:iron_miner", "mult": 0.5}, {"key": "hazard:coal_miner", "mult": 0.5}, {"key": "hazard:uranium_miner", "mult": 0.5}]},
+	{"id": "safety_goggles", "name": "Safety Goggles", "requires": "steel", "cost": {"steel": 1e8}, "unlock": [{"job": "steelworker", "count": 5}],
+		"desc": "+20 IQ cap, all accidents halved.", "flavor": "",
+		"effects": [{"key": "iq_cap", "add": 20}, {"key": "hazard", "mult": 0.5}]},
+	{"id": "hard_hats", "name": "Hard Hats", "requires": "oil", "cost": {"oil": 1e9}, "unlock": [{"job": "oil_driller", "count": 5}],
+		"desc": "+20 IQ cap, all accidents halved.", "flavor": "",
+		"effects": [{"key": "iq_cap", "add": 20}, {"key": "hazard", "mult": 0.5}]},
+	{"id": "radiation_suits", "name": "Radiation Suits", "requires": "uranium", "cost": {"uranium": 1e12}, "unlock": [{"job": "uranium_miner", "count": 5}],
+		"desc": "+20 IQ cap, Uranium Miner and Physicist accidents 70% rarer.", "flavor": "",
+		"effects": [{"key": "iq_cap", "add": 20}, {"key": "hazard:uranium_miner", "mult": 0.3}, {"key": "hazard:physicist", "mult": 0.3}]},
 
 	# --- the silly ones. "unlock" conditions must be met once before the upgrade shows up. ---
 	# clicking
@@ -345,6 +406,10 @@ const UPGRADES := [
 		"effects": [{"key": "job:all", "mult": 2.0}]},
 ]
 
+# People with no job still find ways to die.
+const IDLE_HAZARD := 1.0
+const IDLE_DEATHS := ["wandered off a cliff out of boredom", "poked a sleeping bear", "tried to fly"]
+
 # --- items ---------------------------------------------------------------------
 
 const RARITIES := {
@@ -508,13 +573,41 @@ const COUNTRIES := [
 		"reward_desc": "All workers produce 2.5x.", "effects": [{"key": "job:all", "mult": 2.5}]},
 ]
 
+# --- rebirth ---------------------------------------------------------------------
+
+# Legacy earned on rebirth for each resource unlocked during the run, plus per conquest (deaths: see Game.deaths_legacy).
+const ERA_LEGACY := {"stone": 1, "clay": 2, "copper": 4, "bronze": 6, "iron": 9, "coal": 12, "steel": 16, "oil": 20,
+	"electricity": 25, "silicon": 30, "uranium": 36, "antimatter": 43, "dark_matter": 50}
+const LEGACY_PER_CONQUEST := 3
+
+# Bought with Legacy; levels last forever. Level n costs cost * growth^n. Effects apply once per level.
+# Special keys: start_pop, start_food, start_iq, start_relic (applied when a run starts).
+const PRESTIGE := [
+	{"id": "ancestral_wisdom", "name": "Ancestral Wisdom", "max": 5, "cost": 1, "growth": 2,
+		"desc": "+10 starting IQ and IQ cap per level.", "effects": [{"key": "start_iq", "add": 10}, {"key": "iq_cap", "add": 10}]},
+	{"id": "hardy_genes", "name": "Hardy Genes", "max": 5, "cost": 1, "growth": 2,
+		"desc": "Accidents 15% rarer per level.", "effects": [{"key": "hazard", "mult": 0.85}]},
+	{"id": "old_recipes", "name": "Old Recipes", "max": 5, "cost": 1, "growth": 2,
+		"desc": "Food spoils 15% slower per level.", "effects": [{"key": "spoil:food", "mult": 0.85}]},
+	{"id": "bigger_tribe", "name": "Bigger Tribe", "max": 5, "cost": 2, "growth": 2,
+		"desc": "Start with +2 people and +50 food per level; +2 max population.", "effects": [{"key": "start_pop", "add": 2}, {"key": "start_food", "add": 50}, {"key": "pop_cap", "add": 2}]},
+	{"id": "fertile_ground", "name": "Fertile Ground", "max": 5, "cost": 2, "growth": 2,
+		"desc": "Population grows 20% faster per level.", "effects": [{"key": "growth", "mult": 1.2}]},
+	{"id": "muscle_memory", "name": "Muscle Memory", "max": 5, "cost": 1, "growth": 2,
+		"desc": "Clicking gathers 2x per level.", "effects": [{"key": "click", "mult": 2.0}]},
+	{"id": "fast_learners", "name": "Fast Learners", "max": 5, "cost": 2, "growth": 2,
+		"desc": "Elders teach 25% faster per level.", "effects": [{"key": "teaching", "mult": 1.25}]},
+	{"id": "heirloom", "name": "Heirloom", "max": 3, "cost": 5, "growth": 3,
+		"desc": "Start each run with a random Artisan relic per level.", "effects": [{"key": "start_relic", "add": 1}]},
+]
+
 static var _index: Dictionary = {}
 
 
 static func find(list_name: String, id: String) -> Dictionary:
 	if _index.is_empty():
 		for pair in [["resource", RESOURCES], ["tech", TECHS], ["job", JOBS], ["building", BUILDINGS], ["upgrade", UPGRADES],
-				["maker", MAKERS], ["item", ITEMS], ["synergy", SYNERGIES], ["country", COUNTRIES]]:
+				["maker", MAKERS], ["item", ITEMS], ["synergy", SYNERGIES], ["country", COUNTRIES], ["prestige", PRESTIGE]]:
 			for entry in pair[1]:
 				_index["%s:%s" % [pair[0], entry["id"]]] = entry
 	return _index.get("%s:%s" % [list_name, id], {})
