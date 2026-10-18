@@ -13,10 +13,10 @@ const RESOURCES := [
 	{"id": "coal", "name": "Coal"},
 	{"id": "steel", "name": "Steel"},
 	{"id": "oil", "name": "Oil"},
-	{"id": "electricity", "name": "Electricity", "spoil": 0.02},
+	{"id": "electricity", "name": "Electricity", "spoil": 0.005},
 	{"id": "silicon", "name": "Silicon"},
 	{"id": "uranium", "name": "Uranium", "spoil": 0.001},
-	{"id": "antimatter", "name": "Antimatter", "spoil": 0.01},
+	{"id": "antimatter", "name": "Antimatter", "spoil": 0.002},
 	{"id": "dark_matter", "name": "Dark Matter"},
 ]
 
@@ -48,9 +48,9 @@ const TECHS := [
 		"desc": "Purify sand into chips. Unlocks Silicon."},
 	{"id": "nuclear_fission", "name": "Nuclear Fission", "requires": "semiconductors", "unlocks": "uranium", "cost": {"silicon": 1.5e+18},
 		"desc": "Split the atom. Unlocks Uranium."},
-	{"id": "particle_physics", "name": "Particle Physics", "requires": "nuclear_fission", "unlocks": "antimatter", "cost": {"uranium": 4.06e+18},
+	{"id": "particle_physics", "name": "Particle Physics", "requires": "nuclear_fission", "unlocks": "antimatter", "cost": {"uranium": 4.12e+18},
 		"desc": "Capture antiparticles. Unlocks Antimatter."},
-	{"id": "void_theory", "name": "Void Theory", "requires": "particle_physics", "unlocks": "dark_matter", "cost": {"antimatter": 5.33e+19},
+	{"id": "void_theory", "name": "Void Theory", "requires": "particle_physics", "unlocks": "dark_matter", "cost": {"antimatter": 4.78e+13},
 		"desc": "Harvest the unseen. Unlocks Dark Matter."},
 ]
 
