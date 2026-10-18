@@ -30,7 +30,7 @@ const TECHS := [
 		"desc": "Dig and fire clay. Unlocks Clay."},
 	{"id": "warfare", "name": "Warfare", "requires": "pottery", "unlocks": "", "cost": {"stone": 5000.0, "clay": 2000.0},
 		"desc": "Unlocks Warriors and invading other countries."},
-	{"id": "copper_smelting", "name": "Copper Smelting", "requires": "pottery", "unlocks": "copper", "cost": {"clay": 5.47e+06},
+	{"id": "copper_smelting", "name": "Copper Smelting", "requires": "pottery", "unlocks": "copper", "cost": {"clay": 2.35e+07},
 		"desc": "Kilns hot enough to melt ore. Unlocks Copper."},
 	{"id": "bronze_casting", "name": "Bronze Casting", "requires": "copper_smelting", "unlocks": "bronze", "cost": {"copper": 2.56e+08},
 		"desc": "Alloy copper into bronze. Unlocks Bronze."},
