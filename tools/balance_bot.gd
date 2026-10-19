@@ -33,6 +33,8 @@ func _run(seed_value: int) -> void:
 	var unlocked_at := {}
 	while t < hours * 3600.0:
 		game.simulate(STEP, false)
+		# An active player clicks about once a second, which is what holds decay back.
+		game.click_gather(_target_resource())
 		t += STEP
 		think -= STEP
 		if think <= 0.0:
@@ -53,13 +55,16 @@ func _run(seed_value: int) -> void:
 	quit()
 
 
-# An active player: about a click a second to hold back decay, plus lots of gathering early on.
+# Extra gathering clicks early on, when clicks are a big share of income.
 func _click_a_bit() -> void:
-	for i in (30 if game.population <= 40 else 10):
+	if game.population > 40:
+		return
+	for i in 20:
 		game.click_gather(_target_resource())
 
 
 func _think() -> void:
+	game.click_omen()
 	for t in GameData.TECHS:
 		if game.tech_available(t) and game.research(t["id"]):
 			break
@@ -233,3 +238,4 @@ func _report(unlocked_at: Dictionary, t: float) -> void:
 		print("  jobs: " + ", ".join(staffed))
 	print("simulated %s, population %d, items %d, upgrades %d, IQ %.0f, morale %.0f, health %.0f, deaths %d, legacy if reborn %d" % [
 		NumFormat.duration(t), game.population, game.total_items(), game.upgrades.size(), game.iq, game.morale, game.health, game.run_deaths, game.legacy_gain()])
+	print("decay x%.3f, rate %.4f/s, momentum %.2f" % [game.decay, game.decay_rate(), game.decay_momentum])

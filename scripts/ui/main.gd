@@ -34,6 +34,7 @@ var _confirm_wipe: ConfirmationDialog
 var _resource_rows: Dictionary = {}
 var _job_rows: Dictionary = {}
 var _decay_bar: ProgressBar
+var _omen_button: Button
 var _decay_label: Label
 # How many people/buildings/commissions one click moves. MAX_AMOUNT = as many as possible.
 const AMOUNTS := [1, 10, 100, 1000, 10000, -1]
@@ -191,6 +192,13 @@ func _build_click_area(panel_box: VBoxContainer) -> void:
 	_decay_bar.show_percentage = false
 	_decay_bar.custom_minimum_size.y = 10
 	area.add_child(_decay_bar)
+	_omen_button = Button.new()
+	_omen_button.text = "A Golden Omen appears! Click it!"
+	_omen_button.tooltip_text = "Purifies decay and finds a minute of production. Gone in a few seconds."
+	_omen_button.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	_omen_button.visible = false
+	_omen_button.pressed.connect(func(): Game.click_omen(); _omen_button.visible = false)
+	area.add_child(_omen_button)
 	var row := HBoxContainer.new()
 	area.add_child(row)
 	var label := Label.new()
@@ -500,6 +508,9 @@ func _refresh() -> void:
 		+ Game.add("click_cps") * Game.production_per_second(_clicked_resource())
 	_click_button.text = "Gather %s\n+%s per click" % [res_name, NumFormat.fmt(per_click)]
 	_decay_bar.value = Game.decay
+	_omen_button.visible = Game.omen_left > 0.0
+	if _omen_button.visible:
+		_omen_button.text = "A Golden Omen appears! Click it! (%ds)" % ceili(Game.omen_left)
 	var state := "halted" if Game.decay_hold() >= 1.0 else "-%.1f%%/s" % (Game.decay_per_second() * 100.0)
 	_decay_label.text = "Decay: production x%.2f (%s)" % [Game.decay, state]
 	if Game.decay_momentum > 1.05:

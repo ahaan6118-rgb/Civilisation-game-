@@ -99,7 +99,7 @@ const JOBS := [
 # Keys: pop_cap, growth, click, click:<resource>, click_cps (click also gives this fraction of the
 # resource's production/s), job:<job>, job:all, spoil:<resource>, food_use, craft_speed, luck, auto_craft,
 # army:size, army:regen, army:attack, iq_cap, teaching, hazard, hazard:<job or idle>,
-# morale, health, lifespan, decay, crime, build_cost, plague_risk, bad_events.
+# morale, health, lifespan, decay, omen_time (time between Golden Omens), crime, build_cost, plague_risk, bad_events.
 const BUILDINGS := [
 	{"id": "hut", "name": "Hut", "requires": "wood", "cost": {"wood": 15.0}, "scale": 1.3,
 		"desc": "+3 max population.", "effects": [{"key": "pop_cap", "add": 3}]},

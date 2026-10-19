@@ -377,6 +377,13 @@ func _run() -> void:
 	_game.decay = 0.5
 	_game.simulate(600.0, true)
 	_check(_game.decay == 0.5, "no decay offline")
+	_check(_game.click_omen().is_empty(), "no Golden Omen to click yet")
+	_game.omen_timer = 0.05
+	_sim(0.1)
+	_check(_game.omen_left > 0.0, "a Golden Omen appears")
+	_game.decay = 0.3
+	var omen_loot: Dictionary = _game.click_omen()
+	_check(is_equal_approx(_game.decay, 0.6) and omen_loot.has("wood") and _game.omen_left == 0.0, "clicking it purifies decay and pays out")
 	_game.decay_enabled = false
 
 	print("bulk buying")

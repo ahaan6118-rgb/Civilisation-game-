@@ -41,13 +41,21 @@ const STARVE_TIME := 4.0
 const DECAY_MIN_POW := 0.15
 const DECAY_FLOOR := 0.01
 const HALT_PER_CLICK := 1.0
-const HALT_FALL := 0.33
+# Kaizo clears a halt at 0.33 a second; at 75% strength each click holds for 4 seconds instead of 3.
+const HALT_FALL := 0.25
 const HALT_KEEP := 0.25
 const HALT_OVERTIME_LIMIT := 4.0
 const HALT_OVERTIME_POWER := 0.75
 const MOMENTUM_GROWTH := 0.004
 const MOMENTUM_MAX := 4.0
 const MOMENTUM_CLICK_KEEP := 0.97
+# Golden Omens are the golden cookies: one appears every OMEN_MIN..OMEN_MAX seconds while you play,
+# stays for OMEN_LIFETIME seconds, and clicking it purifies decay and pays out some production.
+const OMEN_MIN := 120.0
+const OMEN_MAX := 240.0
+const OMEN_LIFETIME := 15.0
+const OMEN_PURIFY := 2.0
+const OMEN_PAYOUT_SECONDS := 60.0
 # Kaizo's progress scaling at 75% strength: decay starts almost harmless and grows with everything
 # made this run (per digit), upgrades owned and time played (per doubling).
 const DECAY_PER_DIGIT := 0.99775
@@ -95,6 +103,9 @@ var decay_momentum := 1.0
 var decay_enabled := true
 # Seconds played this run (online only).
 var run_time := 0.0
+var omen_timer := OMEN_MAX
+# Seconds left to click the current Golden Omen (0 = none on screen).
+var omen_left := 0.0
 # active event: {id, remaining (-1 = until fixed), target}
 var events: Array = []
 var events_enabled := true
@@ -159,6 +170,8 @@ func new_run() -> void:
 	decay_overtime = 0.0
 	decay_momentum = 1.0
 	run_time = 0.0
+	omen_timer = OMEN_MAX
+	omen_left = 0.0
 	events.clear()
 	_event_timer = EventData.MAX_GAP
 	for r in GameData.RESOURCES:
@@ -857,6 +870,8 @@ func _pay(cost: Dictionary) -> bool:
 
 
 func click_gather(resource_id: String) -> float:
+	# Any press of the big button holds decay back, whatever it gathers.
+	halt_decay(HALT_PER_CLICK)
 	var r := GameData.find("resource", resource_id)
 	if r.is_empty() or not r.get("clickable", false) or not is_unlocked(resource_id):
 		return 0.0
@@ -864,7 +879,6 @@ func click_gather(resource_id: String) -> float:
 	amounts[resource_id] += gained
 	lifetime[resource_id] = lifetime.get(resource_id, 0.0) + gained
 	clicks += 1
-	halt_decay(HALT_PER_CLICK)
 	return gained
 
 
@@ -894,6 +908,13 @@ func decay_per_second() -> float:
 
 func _run_decay(dt: float) -> void:
 	run_time += dt
+	if omen_left > 0.0:
+		omen_left = maxf(0.0, omen_left - dt)
+	else:
+		omen_timer -= dt
+		if omen_timer <= 0.0:
+			omen_timer = _rng.randf_range(OMEN_MIN, OMEN_MAX) * mult("omen_time")
+			omen_left = OMEN_LIFETIME
 	if not decay_enabled:
 		return
 	var hold := decay_hold()
@@ -910,6 +931,22 @@ func halt_decay(amount: float) -> void:
 	decay_halt = maxf(decay_halt, amount)
 	decay_overtime = minf(decay_halt * HALT_OVERTIME_LIMIT, decay_overtime + amount * HALT_KEEP)
 	decay_momentum = 1.0 + (decay_momentum - 1.0) * MOMENTUM_CLICK_KEEP
+
+
+# Clicks the Golden Omen if one is showing. Returns what it paid out.
+func click_omen() -> Dictionary:
+	if omen_left <= 0.0:
+		return {}
+	omen_left = 0.0
+	purify(OMEN_PURIFY)
+	var loot := {}
+	for id in unlocked:
+		var gain: float = production_per_second(id) * OMEN_PAYOUT_SECONDS
+		if gain > 0.0 and id != "food":
+			loot[id] = gain
+			amounts[id] += gain
+	post("Golden Omen! Decay purified%s." % (" and found " + NumFormat.cost(loot) if not loot.is_empty() else ""))
+	return loot
 
 
 # Multiplies production back up (capped at full) and calms momentum.
