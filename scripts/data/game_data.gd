@@ -3,7 +3,7 @@ extends RefCounted
 
 # spoil = fraction of the stockpile lost per second (only while the game is open).
 const RESOURCES := [
-	{"id": "food", "name": "Food", "spoil": 0.01, "clickable": true},
+	{"id": "food", "name": "Food", "spoil": 0.03, "clickable": true},
 	{"id": "wood", "name": "Wood", "clickable": true},
 	{"id": "stone", "name": "Stone", "clickable": true},
 	{"id": "clay", "name": "Clay", "clickable": true},

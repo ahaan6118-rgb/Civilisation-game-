@@ -12,7 +12,7 @@ const FOOD_PER_PERSON := 0.3
 const BASE_IQ := 50.0
 const BASE_IQ_CAP := 60.0
 const IQ_PER_ELDER := 0.02
-const HAZARD_SCALE := 3.0
+const HAZARD_SCALE := 6.0
 const START_MORALE := 50.0
 const START_HEALTH := 60.0
 const GRIEF_PER_DEATH := 4.0
@@ -22,9 +22,9 @@ const ILLNESS_RATE := 0.15
 const MAX_WELLBEING_BONUS := 40.0
 # Births grow with the square root of the population (plus a trickle for tiny tribes) while old age
 # kills each person after about LIFESPAN seconds, so every town settles where deaths catch up with
-# births: about (LIFESPAN / BIRTH_TIME)^2 = 87 people at health 60, more with health, growth and lifespan.
-const BIRTH_TIME := 45.0
-const BASE_BIRTHS := 1.0 / 120.0
+# births: about (LIFESPAN / BIRTH_TIME)^2 = 58 people at health 60, more with health, growth and lifespan.
+const BIRTH_TIME := 55.0
+const BASE_BIRTHS := 1.0 / 240.0
 const LIFESPAN := 420.0
 # Knowledge fades without Elders: IQ slides back toward BASE_IQ by this fraction of the gap per second.
 const IQ_DECAY := 0.002

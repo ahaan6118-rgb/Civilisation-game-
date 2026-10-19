@@ -67,11 +67,11 @@ func _run() -> void:
 	_check(is_equal_approx(_game.amounts["food"], 1000.0), "no spoilage offline")
 	_sim(10.0)
 	var food: float = _game.amounts["food"]
-	_check(food < 910.0 and food > 900.0, "about 10%% rots in 10s online (%.1f left)" % food)
+	_check(food < 745.0 and food > 735.0, "about 26%% rots in 10s online (%.1f left)" % food)
 	_game.amounts["food"] = 10.0
 	_sim(1.0)
 	var small_loss: float = 10.0 - _game.amounts["food"]
-	_check(small_loss < 0.11, "small stockpiles rot slowly (lost %.4f)" % small_loss)
+	_check(small_loss < 0.31, "small stockpiles rot slowly (lost %.4f)" % small_loss)
 
 	print("starvation and growth")
 	_game.reset()
@@ -80,7 +80,7 @@ func _run() -> void:
 	_check(_game.population == 2, "a person starves without food")
 	_game.reset()
 	_game.amounts["food"] = 1000.0
-	_check(is_equal_approx(_game.births_per_second(), 1.0 / 120.0 + sqrt(3.0) / 45.0), "3 healthy people: a baby about every 21s")
+	_check(is_equal_approx(_game.births_per_second(), 1.0 / 240.0 + sqrt(3.0) / 55.0), "3 healthy people: a baby about every 28s")
 	_check(is_equal_approx(_game.old_age_per_second(), 3.0 / 420.0), "and one dies of old age about every 140s")
 	_game._age_progress = -100.0
 	_sim(90.0)
@@ -322,9 +322,9 @@ func _run() -> void:
 	_game.amounts["food"] = 1e6
 	_game.assign_job("woodcutter", 30)
 	var hourly: float = _game.deaths_per_hour("woodcutter")
-	_check(is_equal_approx(hourly, 450.0), "30 woodcutters at IQ 50: 450 deaths/hour (%.1f)" % hourly)
+	_check(is_equal_approx(hourly, 900.0), "30 woodcutters at IQ 50: 900 deaths/hour (%.1f)" % hourly)
 	_game.iq = 100.0
-	_check(is_equal_approx(_game.deaths_per_hour("woodcutter"), 225.0), "IQ 100 is 2x safer")
+	_check(is_equal_approx(_game.deaths_per_hour("woodcutter"), 450.0), "IQ 100 is 2x safer")
 	_game.iq = 50.0
 	var before_deaths: int = _game.run_deaths
 	_sim(120.0)
