@@ -1,8 +1,8 @@
 class_name EventData
 extends RefCounted
 
-const MIN_GAP := 60.0
-const MAX_GAP := 120.0
+const MIN_GAP := 90.0
+const MAX_GAP := 180.0
 const MAX_ACTIVE := 3
 
 # Random events, rolled every MIN_GAP..MAX_GAP seconds while the game is open.
@@ -87,9 +87,9 @@ const EVENTS := [
 		"when": {"min_pop": 30},
 		"desc": "Money is worthless. Buildings cost twice as much.",
 		"effects": [{"key": "build_cost", "mult": 2.0}, {"key": "morale", "add": -5}]},
-	{"id": "exhaustion", "name": "Mine Exhausted", "good": false, "requires": "copper", "weight": 2.0, "duration": -1,
+	{"id": "exhaustion", "name": "Mine Exhausted", "good": false, "requires": "copper", "weight": 2.0, "duration": 600,
 		"when": {"mine": true},
-		"desc": "The seam is running dry. That mine produces 75% less until you dig a new shaft.",
+		"desc": "The seam is running dry. That mine produces 75% less for 10 minutes unless you dig a new shaft.",
 		"effects": [{"key": "job:$target", "mult": 0.25}],
 		"fix": {"label": "Sink a New Shaft", "pay": {"$target": 0.3}}},
 
