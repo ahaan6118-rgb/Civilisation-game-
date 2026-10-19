@@ -99,7 +99,8 @@ func _buy_things() -> void:
 				continue
 			var useful: bool = b["id"] in ["artisan", "blacksmith"] and game.buildings.get(b["id"], 0) < 3
 			for e in b["effects"]:
-				if e["key"] == "pop_cap" and game.population >= game.pop_cap() - 2:
+				# Births slow as homes fill up, so keep building well ahead of the population.
+				if e["key"] == "pop_cap" and game.population >= game.pop_cap() * 0.35:
 					useful = true
 				if e["key"].begins_with("spoil:") and game.buildings.get(b["id"], 0) < 5:
 					useful = true

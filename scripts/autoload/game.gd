@@ -12,7 +12,7 @@ const FOOD_PER_PERSON := 0.3
 const BASE_IQ := 50.0
 const BASE_IQ_CAP := 60.0
 const IQ_PER_ELDER := 0.02
-const HAZARD_SCALE := 6.0
+const HAZARD_SCALE := 4.0
 const START_MORALE := 50.0
 const START_HEALTH := 60.0
 const GRIEF_PER_DEATH := 4.0
@@ -20,17 +20,20 @@ const MAX_GRIEF := 40.0
 const CRIME_BELOW_MORALE := 30.0
 const ILLNESS_RATE := 0.15
 const MAX_WELLBEING_BONUS := 40.0
-# Births grow with the square root of the population (plus a trickle for tiny tribes) while old age
-# kills each person after about LIFESPAN seconds, so every town settles where deaths catch up with
-# births: about (LIFESPAN / BIRTH_TIME)^2 = 58 people at health 60, more with health, growth and lifespan.
-const BIRTH_TIME := 55.0
+# Each person has a baby about once per BIRTH_TIME seconds, slowing as the town fills its housing,
+# plus a trickle so a lone survivor can restart. Old age, accidents and illness pull the other way, so a
+# town settles where deaths match births: a quarter of its housing when badly run, most of it when
+# healthy, smart and safe.
+const BIRTH_TIME := 120.0
 const BASE_BIRTHS := 1.0 / 240.0
 const LIFESPAN := 420.0
 # Knowledge fades without Elders: IQ slides back toward BASE_IQ by this fraction of the gap per second.
 const IQ_DECAY := 0.002
 # Every age brings deadlier work (machines, mines, reactors): accidents x this per age.
-const ERA_DANGER := 1.3
-const FOOD_TO_GROW_PER_PERSON := 5.0
+const ERA_DANGER := 1.15
+# Babies need this much stored food per person. Low enough that a tribe of gatherers can always
+# climb back, since food rot caps how much they can store.
+const FOOD_TO_GROW_PER_PERSON := 2.0
 const STARVE_TIME := 4.0
 # Decay, after the Kaizo Cookies mod at 75% of its strength: everything your people make slowly
 # decays (corruption, rot, laziness) and decays faster the lower it gets. Clicking the big button halts it,
@@ -302,7 +305,8 @@ func old_age_per_second() -> float:
 # Growth upgrades have diminishing returns (4x growth = 2x babies) so births can't outrun death forever.
 func births_per_second() -> float:
 	var fertility := clampf(health / 60.0, 0.2, 1.4) * (0.5 + morale / 100.0)
-	return (BASE_BIRTHS + sqrt(population) / BIRTH_TIME) * sqrt(mult("growth")) * fertility
+	var room := clampf(1.0 - float(population) / maxf(1.0, pop_cap()), 0.0, 1.0)
+	return (BASE_BIRTHS + population / BIRTH_TIME) * sqrt(mult("growth")) * fertility * room
 
 
 func _teach(dt: float) -> void:
@@ -746,8 +750,10 @@ func add(key: String) -> float:
 	return _mods.get(key, {}).get("add", 0.0)
 
 
+# Decay hits industry, not foraging, so it can't starve a tribe into a hole it can never climb out of.
 func job_multiplier(job_id: String) -> float:
-	return mult("job:" + job_id) * mult("job:all") * morale_factor() * decay
+	var m := mult("job:" + job_id) * mult("job:all") * morale_factor()
+	return m if job_id == "gatherer" else m * decay
 
 
 func food_per_second_per_person() -> float:

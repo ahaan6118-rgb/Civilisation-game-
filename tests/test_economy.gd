@@ -80,19 +80,19 @@ func _run() -> void:
 	_sim(4.5)
 	_check(_game.population == 2, "a person starves without food")
 	_game.reset()
-	_game.amounts["food"] = 1000.0
-	_check(is_equal_approx(_game.births_per_second(), 1.0 / 240.0 + sqrt(3.0) / 55.0), "3 healthy people: a baby about every 28s")
+	_game.amounts["food"] = 1e5
+	_check(is_equal_approx(_game.births_per_second(), (1.0 / 240.0 + 3.0 / 120.0) * (1.0 - 3.0 / 5.0)), "3 healthy people in 5 homes: a baby about every 85s")
 	_check(is_equal_approx(_game.old_age_per_second(), 3.0 / 420.0), "and one dies of old age about every 140s")
 	_game._age_progress = -100.0
-	_sim(90.0)
+	_sim(180.0)
 	_check(_game.population >= 4, "population grows with food")
 	_game.reset()
 	_game.population = 10
 	_game.health = 0.0
 	_check(_game.old_age_per_second() > _game.births_per_second(), "a sick tribe dies faster than it breeds")
 	_game.health = 60.0
-	_game.population = 200
-	_check(_game.old_age_per_second() > _game.births_per_second(), "a big town with no growth bonuses shrinks")
+	_game.population = 5
+	_check(_game.births_per_second() == 0.0, "no babies without room")
 
 	print("unlocking stone")
 	_game.reset()
@@ -323,9 +323,9 @@ func _run() -> void:
 	_game.amounts["food"] = 1e6
 	_game.assign_job("woodcutter", 30)
 	var hourly: float = _game.deaths_per_hour("woodcutter")
-	_check(is_equal_approx(hourly, 900.0), "30 woodcutters at IQ 50: 900 deaths/hour (%.1f)" % hourly)
+	_check(is_equal_approx(hourly, 600.0), "30 woodcutters at IQ 50: 600 deaths/hour (%.1f)" % hourly)
 	_game.iq = 100.0
-	_check(is_equal_approx(_game.deaths_per_hour("woodcutter"), 450.0), "IQ 100 is 2x safer")
+	_check(is_equal_approx(_game.deaths_per_hour("woodcutter"), 300.0), "IQ 100 is 2x safer")
 	_game.iq = 50.0
 	var before_deaths: int = _game.run_deaths
 	_sim(120.0)
