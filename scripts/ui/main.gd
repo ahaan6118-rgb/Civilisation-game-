@@ -2,7 +2,7 @@ extends Control
 
 const REFRESH_INTERVAL := 0.2
 const MAX_LOG_LINES := 5
-const ICON_SIZE := Vector2(24, 24)
+const ICON_SIZE := Vector2(28, 28)
 const BAD_COLOR := Color(1.0, 0.45, 0.4)
 const GOOD_COLOR := Color(0.6, 1.0, 0.6)
 
@@ -22,6 +22,7 @@ var _rebirth_button: Button
 var _prestige_buttons: Dictionary = {}
 var _confirm_rebirth: ConfirmationDialog
 var _click_button: Button
+var _click_art: TextureButton
 var _click_choice: OptionButton
 var _click_ids: Array = []
 var _era_label: Label
@@ -151,15 +152,18 @@ func _build_click_area(panel_box: VBoxContainer) -> void:
 	var area := VBoxContainer.new()
 	panel_box.add_child(area)
 	panel_box.move_child(area, 1)
-	_click_button = Button.new()
-	_click_button.custom_minimum_size = Vector2(0, 110)
-	_click_button.add_theme_font_size_override("font_size", 22)
 	var art := Assets.texture("Click")
 	if art:
-		_click_button.icon = art
-		_click_button.expand_icon = true
-		_click_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_click_button.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+		_click_art = TextureButton.new()
+		_click_art.texture_normal = art
+		_click_art.ignore_texture_size = true
+		_click_art.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+		_click_art.custom_minimum_size = Vector2(0, 120)
+		_click_art.pressed.connect(_on_big_click)
+		area.add_child(_click_art)
+	_click_button = Button.new()
+	_click_button.custom_minimum_size = Vector2(0, 70 if art else 110)
+	_click_button.add_theme_font_size_override("font_size", 20)
 	_click_button.pressed.connect(_on_big_click)
 	area.add_child(_click_button)
 	var row := HBoxContainer.new()
@@ -196,6 +200,11 @@ func _on_big_click() -> void:
 	tween.tween_property(pop, "position:y", pop.position.y - 50, 0.7)
 	tween.tween_property(pop, "modulate:a", 0.0, 0.7)
 	tween.chain().tween_callback(pop.queue_free)
+	if _click_art:
+		_click_art.pivot_offset = _click_art.size / 2.0
+		var squish := _click_art.create_tween()
+		squish.tween_property(_click_art, "scale", Vector2(0.9, 0.9), 0.05)
+		squish.tween_property(_click_art, "scale", Vector2.ONE, 0.1)
 	_refresh()
 
 
@@ -287,8 +296,10 @@ func _rebuild_resources() -> void:
 			continue
 		var row := HBoxContainer.new()
 		var icon := _icon(r["name"])
-		if icon:
-			row.add_child(icon)
+		if icon == null:
+			icon = TextureRect.new()
+			icon.custom_minimum_size = ICON_SIZE
+		row.add_child(icon)
 		var name_label := Label.new()
 		name_label.text = r["name"]
 		name_label.custom_minimum_size.x = 90
