@@ -534,7 +534,7 @@ func start_event(id: String) -> void:
 	_changed()
 
 
-# Disasters get worse every age: x1 in the Wood age, x1.25 in Stone, and so on.
+# Disasters get worse every age: x1 in the Wood age, x1.12 in Stone, and so on.
 func disaster_severity() -> float:
 	return 1.0 + EventData.SEVERITY_PER_ERA * maxi(0, era_index())
 
@@ -1252,9 +1252,9 @@ func legacy_gain() -> int:
 	return gain
 
 
-# Grows with the square root of deaths: 400 deaths = 4 Legacy, 10,000 = 20.
+# Grows with the number of digits: 100 deaths = 2 Legacy, 10,000 = 4, a million = 6.
 func deaths_legacy() -> int:
-	return int(sqrt(run_deaths) / 5.0)
+	return int(log(run_deaths + 1.0) / log(10.0)) if run_deaths >= 10 else 0
 
 
 func rebirth() -> int:

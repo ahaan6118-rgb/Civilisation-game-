@@ -5,10 +5,10 @@ const MIN_GAP := 90.0
 const MAX_GAP := 180.0
 const MAX_ACTIVE := 4
 # Each age: the gap between events shrinks (gap / (1 + this * age)) and disasters hit harder.
-const GAP_SHRINK_PER_ERA := 0.12
-const SEVERITY_PER_ERA := 0.25
+const GAP_SHRINK_PER_ERA := 0.06
+const SEVERITY_PER_ERA := 0.12
 # A "destroy": n disaster also wrecks n * this share of all your buildings, if that's more.
-const DESTROY_SHARE := 0.01
+const DESTROY_SHARE := 0.005
 
 # Random events, rolled every MIN_GAP..MAX_GAP seconds while the game is open.
 #   requires:  resource that must be unlocked (the age it can happen in)

@@ -374,9 +374,13 @@ func _run() -> void:
 	_check(_game.legacy_gain() == 1, "early ages give no legacy, a conquest gives 1 (%d)" % _game.legacy_gain())
 	_game.unlocked["copper"] = true
 	_game.run_deaths = 2500
-	_check(_game.legacy_gain() == 1 + 1 + 10, "legacy from eras, conquest and deaths (%d)" % _game.legacy_gain())
+	_check(_game.legacy_gain() == 1 + 1 + 3, "legacy from eras, conquest and deaths (%d)" % _game.legacy_gain())
+	_game.run_deaths = 2000000
+	_check(_game.deaths_legacy() == 6, "mass death can't farm legacy (%d)" % _game.deaths_legacy())
+	_game.run_deaths = 2500
 	_game.items = {"lucky_pebble": 1}
-	_check(_game.rebirth() == 12 and _game.legacy == 12 and _game.runs == 1, "rebirth pays out")
+	_game.legacy = 7
+	_check(_game.rebirth() == 5 and _game.legacy == 12 and _game.runs == 1, "rebirth pays out")
 	_check(not _game.is_unlocked("stone") and _game.items.is_empty() and _game.conquered.is_empty(), "rebirth resets the run")
 	_check(_game.buy_prestige("ancestral_wisdom") and _game.legacy == 9, "buy Ancestral Wisdom for 3")
 	_check(_game.prestige_cost("ancestral_wisdom") == 9, "next level costs 9")

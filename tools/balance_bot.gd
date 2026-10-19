@@ -1,5 +1,5 @@
 # Plays the economy automatically and prints when each era unlocks.
-# Run: godot --headless --path . -s tools/balance_bot.gd -- [hours=40] [seed=1] [noevents]
+# Run: godot --headless --path . -s tools/balance_bot.gd -- [hours=40] [seed=1] [noevents|events] [stop_at resource]
 extends SceneTree
 
 const STEP := 1.0
@@ -9,6 +9,7 @@ var game: Node
 var hours := 40.0
 var _snapshots := {}
 var _events := true
+var _stop_at := ""
 
 
 func _initialize() -> void:
@@ -16,6 +17,7 @@ func _initialize() -> void:
 	if args.size() > 0:
 		hours = float(args[0])
 	_events = not (args.size() > 2 and args[2] == "noevents")
+	_stop_at = args[3] if args.size() > 3 else ""
 	_run.call_deferred(int(args[1]) if args.size() > 1 else 1)
 
 
@@ -44,6 +46,8 @@ func _run(seed_value: int) -> void:
 				if r["id"] == "antimatter":
 					print("antimatter production when unlocked: %s/s" % NumFormat.fmt(game.production_per_second("antimatter")))
 		if game.is_unlocked("dark_matter") and t - unlocked_at["dark_matter"] > 600.0:
+			break
+		if _stop_at != "" and game.is_unlocked(_stop_at):
 			break
 	_report(unlocked_at, t)
 	quit()
