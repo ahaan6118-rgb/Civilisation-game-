@@ -32,6 +32,25 @@ const IQ_DECAY := 0.002
 const ERA_DANGER := 1.3
 const FOOD_TO_GROW_PER_PERSON := 5.0
 const STARVE_TIME := 4.0
+# Decay, after the Kaizo Cookies mod at 75% of its strength: everything your people make slowly
+# decays (corruption, rot, laziness) and decays faster the lower it gets. Clicking the big button halts it,
+# discoveries, upgrades and blessings purify it, and leaving it alone builds momentum.
+const DECAY_MIN_POW := 0.15
+const DECAY_FLOOR := 0.01
+const HALT_PER_CLICK := 1.0
+const HALT_FALL := 0.33
+const HALT_KEEP := 0.25
+const HALT_OVERTIME_LIMIT := 4.0
+const HALT_OVERTIME_POWER := 0.75
+const MOMENTUM_GROWTH := 0.004
+const MOMENTUM_MAX := 4.0
+const MOMENTUM_CLICK_KEEP := 0.97
+# Kaizo's progress scaling at 75% strength: decay starts almost harmless and grows with everything
+# made this run (per digit), upgrades owned and time played (per doubling).
+const DECAY_PER_DIGIT := 0.99775
+const DECAY_PER_UPGRADE := 0.998
+const DECAY_PER_TIME_DOUBLING := 0.9999
+const DECAY_SCALING := 0.75
 const MAX_OFFLINE_SECONDS := 8.0 * 3600.0
 const OFFLINE_CHUNK := 60.0
 
@@ -65,6 +84,14 @@ var health := START_HEALTH
 var grief := 0.0
 var weariness := 0.0
 var crime_rate := 0.0
+# 1 = full production; falls toward DECAY_FLOOR.
+var decay := 1.0
+var decay_halt := 0.0
+var decay_overtime := 0.0
+var decay_momentum := 1.0
+var decay_enabled := true
+# Seconds played this run (online only).
+var run_time := 0.0
 # active event: {id, remaining (-1 = until fixed), target}
 var events: Array = []
 var events_enabled := true
@@ -124,6 +151,11 @@ func new_run() -> void:
 	grief = 0.0
 	weariness = 0.0
 	crime_rate = 0.0
+	decay = 1.0
+	decay_halt = 0.0
+	decay_overtime = 0.0
+	decay_momentum = 1.0
+	run_time = 0.0
 	events.clear()
 	_event_timer = EventData.MAX_GAP
 	for r in GameData.RESOURCES:
@@ -171,6 +203,7 @@ func simulate(dt: float, offline: bool) -> void:
 	if offline:
 		return
 	_forget(dt)
+	_run_decay(dt)
 	_run_accidents(dt)
 	_update_wellbeing(dt)
 	_run_illness(dt)
@@ -524,6 +557,8 @@ func start_event(id: String) -> void:
 	var duration: float = e["duration"]
 	if duration != 0:
 		events.append({"id": id, "remaining": duration, "target": target})
+	if e["good"]:
+		purify(1.5)
 	var title := ("BLESSING: %s! " if e["good"] else "DISASTER: %s! ") % e["name"]
 	post(title + e["desc"] + (" (" + ", ".join(notes) + ")" if not notes.is_empty() else ""))
 	if start.get("relic", false):
@@ -712,7 +747,7 @@ func add(key: String) -> float:
 
 
 func job_multiplier(job_id: String) -> float:
-	return mult("job:" + job_id) * mult("job:all") * morale_factor()
+	return mult("job:" + job_id) * mult("job:all") * morale_factor() * decay
 
 
 func food_per_second_per_person() -> float:
@@ -823,7 +858,58 @@ func click_gather(resource_id: String) -> float:
 	amounts[resource_id] += gained
 	lifetime[resource_id] = lifetime.get(resource_id, 0.0) + gained
 	clicks += 1
+	halt_decay(HALT_PER_CLICK)
 	return gained
+
+
+# --- decay -----------------------------------------------------------------------
+
+# Base decay per second near full production, growing with how far the civilisation has come.
+func decay_rate() -> float:
+	var total := 0.0
+	for id in lifetime:
+		total += lifetime[id]
+	var keep := pow(DECAY_PER_DIGIT, DECAY_SCALING * log(total + 1.0) / log(10.0))
+	keep *= pow(DECAY_PER_UPGRADE, DECAY_SCALING * maxf(sqrt(upgrades.size()) - 5.0, 0.0))
+	keep *= pow(DECAY_PER_TIME_DOUBLING, DECAY_SCALING * log(maxf(run_time * 1000.0 - 100000.0, 1.0)) / log(2.0))
+	return (1.0 - keep) * mult("decay")
+
+
+# How much the current halt holds decay back: 1 = fully stopped.
+func decay_hold() -> float:
+	return minf(pow(decay_halt + decay_overtime * HALT_OVERTIME_POWER, 0.5), 1.0)
+
+
+# Decay speeds up as production falls (the power grows from DECAY_MIN_POW toward 1).
+func decay_per_second() -> float:
+	var rate := minf(0.95, decay_rate() * decay_momentum)
+	return 1.0 - pow(1.0 - rate, maxf(1.0 - decay, DECAY_MIN_POW) * (1.0 - decay_hold()))
+
+
+func _run_decay(dt: float) -> void:
+	run_time += dt
+	if not decay_enabled:
+		return
+	var hold := decay_hold()
+	decay = maxf(DECAY_FLOOR, decay * pow(1.0 - decay_per_second(), dt))
+	decay_momentum = minf(MOMENTUM_MAX, decay_momentum + MOMENTUM_GROWTH * (1.0 - hold) * dt)
+	if decay_halt > 0.0:
+		decay_halt = maxf(0.0, decay_halt - HALT_FALL * dt)
+		decay_overtime = maxf(0.0, decay_overtime - HALT_FALL * 0.5 * dt)
+	else:
+		decay_overtime = maxf(0.0, decay_overtime - HALT_FALL * dt)
+
+
+func halt_decay(amount: float) -> void:
+	decay_halt = maxf(decay_halt, amount)
+	decay_overtime = minf(decay_halt * HALT_OVERTIME_LIMIT, decay_overtime + amount * HALT_KEEP)
+	decay_momentum = 1.0 + (decay_momentum - 1.0) * MOMENTUM_CLICK_KEEP
+
+
+# Multiplies production back up (capped at full) and calms momentum.
+func purify(factor: float) -> void:
+	decay = minf(1.0, decay * factor)
+	decay_momentum = 1.0 + (decay_momentum - 1.0) * 0.5
 
 
 func assign_job(job_id: String, delta: int) -> void:
@@ -911,6 +997,7 @@ func buy_upgrade(id: String) -> bool:
 	if u.is_empty() or not upgrade_available(u) or not _pay(u["cost"]):
 		return false
 	upgrades[id] = true
+	purify(1.15)
 	post("Upgrade bought: %s" % u["name"])
 	_changed()
 	return true
@@ -921,6 +1008,8 @@ func research(id: String) -> bool:
 	if t.is_empty() or not tech_available(t) or not _pay(t["cost"]):
 		return false
 	techs[id] = true
+	purify(100.0)
+	decay_momentum = 1.0
 	if t["unlocks"] != "":
 		unlocked[t["unlocks"]] = true
 	post("Discovered %s! %s" % [t["name"], t["desc"]])
@@ -1343,6 +1432,9 @@ func to_dict() -> Dictionary:
 		"prestige": prestige.duplicate(),
 		"runs": runs,
 		"morale": morale,
+		"decay": decay,
+		"decay_momentum": decay_momentum,
+		"run_time": run_time,
 		"health": health,
 		"grief": grief,
 		"weariness": weariness,
@@ -1374,6 +1466,9 @@ func from_dict(data: Dictionary) -> void:
 	population = int(data.get("population", STARTING_POPULATION))
 	iq = float(data.get("iq", BASE_IQ))
 	morale = float(data.get("morale", START_MORALE))
+	decay = clampf(float(data.get("decay", 1.0)), DECAY_FLOOR, 1.0)
+	decay_momentum = clampf(float(data.get("decay_momentum", 1.0)), 1.0, MOMENTUM_MAX)
+	run_time = float(data.get("run_time", 0.0))
 	health = float(data.get("health", START_HEALTH))
 	grief = float(data.get("grief", 0.0))
 	weariness = float(data.get("weariness", 0.0))

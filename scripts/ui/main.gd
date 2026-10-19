@@ -33,6 +33,8 @@ var _confirm_wipe: ConfirmationDialog
 
 var _resource_rows: Dictionary = {}
 var _job_rows: Dictionary = {}
+var _decay_bar: ProgressBar
+var _decay_label: Label
 # How many people/buildings/commissions one click moves. MAX_AMOUNT = as many as possible.
 const AMOUNTS := [1, 10, 100, 1000, 10000, -1]
 const AMOUNT_LABELS := ["x1", "x10", "x100", "x1K", "x10K", "Max"]
@@ -179,6 +181,16 @@ func _build_click_area(panel_box: VBoxContainer) -> void:
 	_click_button.add_theme_font_size_override("font_size", 20)
 	_click_button.pressed.connect(_on_big_click)
 	area.add_child(_click_button)
+	_decay_label = Label.new()
+	_decay_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_decay_label.tooltip_text = "Everything your people make slowly decays, faster the lower it gets.\nClicking the big button halts it for a few seconds. Discoveries, upgrades and blessings purify it.\nLeave it alone and it builds momentum."
+	_decay_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	area.add_child(_decay_label)
+	_decay_bar = ProgressBar.new()
+	_decay_bar.max_value = 1.0
+	_decay_bar.show_percentage = false
+	_decay_bar.custom_minimum_size.y = 10
+	area.add_child(_decay_bar)
 	var row := HBoxContainer.new()
 	area.add_child(row)
 	var label := Label.new()
@@ -487,6 +499,13 @@ func _refresh() -> void:
 	var per_click := Game.mult("click") * Game.mult("click:" + _clicked_resource()) \
 		+ Game.add("click_cps") * Game.production_per_second(_clicked_resource())
 	_click_button.text = "Gather %s\n+%s per click" % [res_name, NumFormat.fmt(per_click)]
+	_decay_bar.value = Game.decay
+	var state := "halted" if Game.decay_hold() >= 1.0 else "-%.1f%%/s" % (Game.decay_per_second() * 100.0)
+	_decay_label.text = "Decay: production x%.2f (%s)" % [Game.decay, state]
+	if Game.decay_momentum > 1.05:
+		_decay_label.text += "  momentum x%.2f" % Game.decay_momentum
+	_decay_label.modulate = BAD_COLOR if Game.decay < 0.5 else (Color(1, 0.85, 0.5) if Game.decay < 0.9 else Color.WHITE)
+	_decay_bar.modulate = _decay_label.modulate
 
 	var food_use := Game.population * Game.food_per_second_per_person()
 	var hourly := 0.0

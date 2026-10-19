@@ -39,6 +39,7 @@ func _run() -> void:
 	root.get_node("SaveManager").wipe()
 	_game._rng.seed = 12345
 	_game.events_enabled = false
+	_game.decay_enabled = false
 
 	print("starting state")
 	_game.reset()
@@ -347,6 +348,36 @@ func _run() -> void:
 	_game.upgrades["fire_is_hot"] = true
 	_game.rebuild_modifiers()
 	_check(_game.iq_cap() == 70.0, "lessons raise the IQ cap")
+
+	print("decay")
+	_game.reset()
+	_game.decay_enabled = true
+	_check(_game.decay == 1.0, "a run starts with no decay")
+	var early_rate: float = _game.decay_rate()
+	_game.lifetime["wood"] = 1e20
+	var late_rate: float = _game.decay_rate()
+	_check(early_rate < 0.005 and late_rate > 0.03, "decay starts gentle and grows with progress (%.4f -> %.4f)" % [early_rate, late_rate])
+	_sim(60.0)
+	var after_minute: float = _game.decay
+	_check(after_minute < 0.97 and after_minute > 0.5, "a minute of neglect late in a run costs production (x%.2f)" % after_minute)
+	_sim(600.0)
+	_check(_game.decay < after_minute * 0.6 and _game.decay_momentum > 1.5, "it gets worse and builds momentum (x%.2f, momentum %.2f)" % [_game.decay, _game.decay_momentum])
+	var held: float = _game.decay
+	_game.click_gather("wood")
+	_sim(2.0)
+	_check(is_equal_approx(_game.decay, held), "clicking halts decay")
+	_game.amounts["wood"] = 1000.0
+	_game.research("stone_working")
+	_check(_game.decay == 1.0 and _game.decay_momentum == 1.0, "a discovery purifies everything")
+	_game.population = 10
+	_game.assign_job("woodcutter", 10)
+	var full: float = _game.production_per_second("wood")
+	_game.decay = 0.5
+	_check(is_equal_approx(_game.production_per_second("wood"), full * 0.5), "decay scales production")
+	_game.decay = 0.5
+	_game.simulate(600.0, true)
+	_check(_game.decay == 0.5, "no decay offline")
+	_game.decay_enabled = false
 
 	print("bulk buying")
 	_game.reset()

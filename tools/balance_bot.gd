@@ -53,11 +53,9 @@ func _run(seed_value: int) -> void:
 	quit()
 
 
-# A player clicks early on; model a few clicks per second for the first 15 minutes.
+# An active player: about a click a second to hold back decay, plus lots of gathering early on.
 func _click_a_bit() -> void:
-	if game.population > 40:
-		return
-	for i in 30:
+	for i in (30 if game.population <= 40 else 10):
 		game.click_gather(_target_resource())
 
 
