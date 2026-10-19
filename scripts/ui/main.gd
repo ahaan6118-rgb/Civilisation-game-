@@ -33,6 +33,12 @@ var _confirm_wipe: ConfirmationDialog
 
 var _resource_rows: Dictionary = {}
 var _job_rows: Dictionary = {}
+# How many people/buildings/commissions one click moves. MAX_AMOUNT = as many as possible.
+const AMOUNTS := [1, 10, 100, 1000, 10000, -1]
+const AMOUNT_LABELS := ["x1", "x10", "x100", "x1K", "x10K", "Max"]
+const MAX_AMOUNT := -1
+var _amount := 1
+var _amount_buttons: Array = []
 var _shop_buttons: Array = []
 var _shop_signature := ""
 var _commission_buttons: Array = []
@@ -103,6 +109,13 @@ func _build_layout() -> void:
 	_event_list = VBoxContainer.new()
 	pop_column.add_child(_event_list)
 	pop_column.add_child(HSeparator.new())
+	var job_tools := _make_amount_row()
+	var clear := Button.new()
+	clear.text = "Clear"
+	clear.tooltip_text = "Take everyone off their jobs."
+	clear.pressed.connect(func(): Game.unassign_all())
+	job_tools.add_child(clear)
+	pop_column.add_child(job_tools)
 	_job_list = VBoxContainer.new()
 	pop_column.add_child(_job_list)
 
@@ -113,7 +126,7 @@ func _build_layout() -> void:
 	tabs.add_theme_font_size_override("font_size", 14)
 	_columns.add_child(tabs)
 	_tech_list = _make_tab(tabs, "Discoveries")
-	_building_list = _make_tab(tabs, "Buildings")
+	_building_list = _make_tab_with_header(tabs, "Buildings", _make_amount_row())
 	_upgrade_list = _make_tab(tabs, "Upgrades")
 	_craft_list = _make_tab(tabs, "Crafting")
 	_war_list = _make_tab(tabs, "War")
@@ -241,6 +254,53 @@ func _make_panel(title: String, ratio: float) -> VBoxContainer:
 	return list
 
 
+# Buy/assign amount picker: x1, x10, ... Max. Every copy of it stays in sync.
+func _make_amount_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	var label := Label.new()
+	label.text = "Buy/assign:"
+	row.add_child(label)
+	for a in AMOUNTS:
+		var amount: int = a
+		var button := Button.new()
+		button.toggle_mode = true
+		button.text = AMOUNT_LABELS[AMOUNTS.find(amount)]
+		button.tooltip_text = "Each click moves as many as possible." if amount == MAX_AMOUNT else "Each click moves %s." % NumFormat.fmt(amount)
+		button.button_pressed = amount == _amount
+		button.pressed.connect(func(): _set_amount(amount))
+		row.add_child(button)
+		_amount_buttons.append({"button": button, "amount": amount})
+	return row
+
+
+func _set_amount(amount: int) -> void:
+	_amount = amount
+	for entry in _amount_buttons:
+		entry["button"].set_pressed_no_signal(entry["amount"] == amount)
+
+
+# Number for one click: the picked amount (Shift multiplies it by 10), or a huge number for Max.
+func _step() -> int:
+	if _amount == MAX_AMOUNT:
+		return 1 << 40
+	return _amount * (10 if Input.is_key_pressed(KEY_SHIFT) else 1)
+
+
+func _make_tab_with_header(tabs: TabContainer, title: String, header: Control) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.name = title
+	tabs.add_child(box)
+	box.add_child(header)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(list)
+	return list
+
+
 func _make_tab(tabs: TabContainer, title: String) -> VBoxContainer:
 	var scroll := ScrollContainer.new()
 	scroll.name = title
@@ -338,7 +398,7 @@ func _rebuild_jobs() -> void:
 		var minus := Button.new()
 		minus.text = "-"
 		minus.custom_minimum_size = Vector2(32, 28)
-		minus.tooltip_text = "Shift-click for 10"
+		minus.tooltip_text = "Uses the Amount picker; Shift-click for 10x"
 		minus.pressed.connect(func(): Game.assign_job(id, -_step()))
 		row.add_child(minus)
 		var count := Label.new()
@@ -348,15 +408,11 @@ func _rebuild_jobs() -> void:
 		var plus := Button.new()
 		plus.text = "+"
 		plus.custom_minimum_size = Vector2(32, 28)
-		plus.tooltip_text = "Shift-click for 10"
+		plus.tooltip_text = "Uses the Amount picker; Shift-click for 10x"
 		plus.pressed.connect(func(): Game.assign_job(id, _step()))
 		row.add_child(plus)
 		_job_list.add_child(row)
 		_job_rows[id] = {"count": count, "output": output, "name": name_label}
-
-
-func _step() -> int:
-	return 10 if Input.is_key_pressed(KEY_SHIFT) else 1
 
 
 func _available_signature() -> String:
@@ -407,7 +463,7 @@ func _add_shop_button(list: VBoxContainer, kind: String, entry: Dictionary) -> v
 		"tech":
 			button.pressed.connect(func(): Game.research(id))
 		"building":
-			button.pressed.connect(func(): Game.buy_building(id))
+			button.pressed.connect(func(): Game.buy_buildings(id, _step()))
 		"upgrade":
 			button.pressed.connect(func(): Game.buy_upgrade(id))
 	list.add_child(button)
@@ -528,16 +584,25 @@ func _refresh() -> void:
 		var entry: Dictionary = item["entry"]
 		var cost: Dictionary
 		var title: String = entry["name"]
+		var affordable := true
 		if item["kind"] == "building":
-			cost = Game.building_cost(entry["id"])
+			var want := _step()
+			var n := mini(want, Game.MAX_BULK)
+			if _amount == MAX_AMOUNT:
+				n = maxi(1, Game.affordable_buildings(entry["id"]))
+			cost = Game.building_cost_bulk(entry["id"], n)
 			title += " (%d)" % Game.buildings.get(entry["id"], 0)
+			if n > 1:
+				title += "   buy %s" % NumFormat.fmt(n)
+			affordable = Game.affordable_buildings(entry["id"], 1) > 0
 		else:
 			cost = entry["cost"]
 		var text := "%s\n%s" % [title, entry["desc"]]
 		if entry.get("flavor", "") != "":
 			text += "\n\"%s\"" % entry["flavor"]
 		button.text = text + "\nCost: " + NumFormat.cost(cost)
-		button.disabled = not Game.can_afford(cost)
+		# Buildings stay clickable while at least one is affordable; you get as many as you can pay for.
+		button.disabled = not affordable if item["kind"] == "building" else not Game.can_afford(cost)
 
 
 func _rebuild_crafting() -> void:
@@ -562,7 +627,7 @@ func _rebuild_crafting() -> void:
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		button.tooltip_text = "Pay the cost to get a random item."
-		button.pressed.connect(func(): Game.start_commission(maker_id))
+		button.pressed.connect(func(): Game.start_commissions(maker_id, _step()))
 		var row := HBoxContainer.new()
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(button)

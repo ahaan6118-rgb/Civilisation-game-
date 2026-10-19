@@ -348,6 +348,23 @@ func _run() -> void:
 	_game.rebuild_modifiers()
 	_check(_game.iq_cap() == 70.0, "lessons raise the IQ cap")
 
+	print("bulk buying")
+	_game.reset()
+	_game.amounts["wood"] = 1e6
+	var one_cost: float = _game.building_cost("hut")["wood"]
+	var ten: Dictionary = _game.building_cost_bulk("hut", 10)
+	var expected := 0.0
+	for k in 10:
+		expected += ceilf(15.0 * pow(1.3, k))
+	_check(absf(ten["wood"] - expected) <= 10.0 and one_cost == 15.0, "bulk cost adds up the next 10 huts (%.0f vs %.0f)" % [ten["wood"], expected])
+	var can: int = _game.affordable_buildings("hut")
+	_check(_game.buy_buildings("hut", 1 << 40) == can and can > 10 and not _game.can_afford(_game.building_cost("hut")), "Max buys every hut you can afford (%d)" % can)
+	_game.population = 50
+	_game.assign_job("woodcutter", 1 << 40)
+	_check(_game.jobs["woodcutter"] == 50 and _game.idle() == 0, "Max assigns every idle person")
+	_game.unassign_all()
+	_check(_game.idle() == 50, "unassign all")
+
 	print("rebirth")
 	_game.reset()
 	_check(_game.legacy_gain() == 0, "no legacy for a fresh run")

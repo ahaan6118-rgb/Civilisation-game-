@@ -847,6 +847,65 @@ func buy_building(id: String) -> bool:
 	return true
 
 
+# Most buildings bought in one go when you ask for "Max".
+const MAX_BULK := 100000
+
+
+# Total cost of the next n copies of a building.
+func building_cost_bulk(id: String, n: int) -> Dictionary:
+	var b := GameData.find("building", id)
+	var count: int = buildings.get(id, 0)
+	var scale: float = b["scale"]
+	var cost := {}
+	for res in b["cost"]:
+		var first: float = b["cost"][res] * pow(scale, count) * mult("build_cost")
+		cost[res] = ceilf(first * (pow(scale, n) - 1.0) / (scale - 1.0)) if scale != 1.0 else ceilf(first * n)
+	return cost
+
+
+# How many more copies you could buy right now (up to limit).
+func affordable_buildings(id: String, limit: int = MAX_BULK) -> int:
+	var b := GameData.find("building", id)
+	if b.is_empty() or not building_available(b):
+		return 0
+	var lo := 0
+	var hi := limit
+	while lo < hi:
+		var mid := (lo + hi + 1) / 2
+		if can_afford(building_cost_bulk(id, mid)):
+			lo = mid
+		else:
+			hi = mid - 1
+	return lo
+
+
+# Buys up to n copies (all you can afford if fewer). Returns how many were bought.
+func buy_buildings(id: String, n: int) -> int:
+	var b := GameData.find("building", id)
+	if b.is_empty() or not building_available(b):
+		return 0
+	var k := affordable_buildings(id, n)
+	if k <= 0 or not _pay(building_cost_bulk(id, k)):
+		return 0
+	buildings[id] = buildings.get(id, 0) + k
+	_changed()
+	return k
+
+
+func unassign_all() -> void:
+	for id in jobs:
+		jobs[id] = 0
+	_changed()
+
+
+# Fills up to n free slots of a maker. Returns how many commissions started.
+func start_commissions(maker_id: String, n: int) -> int:
+	var started := 0
+	while started < n and start_commission(maker_id):
+		started += 1
+	return started
+
+
 func buy_upgrade(id: String) -> bool:
 	var u := GameData.find("upgrade", id)
 	if u.is_empty() or not upgrade_available(u) or not _pay(u["cost"]):
