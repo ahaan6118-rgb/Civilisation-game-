@@ -20,7 +20,16 @@ const MAX_GRIEF := 40.0
 const CRIME_BELOW_MORALE := 30.0
 const ILLNESS_RATE := 0.15
 const MAX_WELLBEING_BONUS := 40.0
-const GROW_TIME := 20.0
+# Births grow with the square root of the population (plus a trickle for tiny tribes) while old age
+# kills each person after about LIFESPAN seconds, so every town settles where deaths catch up with
+# births: about (LIFESPAN / BIRTH_TIME)^2 = 87 people at health 60, more with health, growth and lifespan.
+const BIRTH_TIME := 45.0
+const BASE_BIRTHS := 1.0 / 120.0
+const LIFESPAN := 420.0
+# Knowledge fades without Elders: IQ slides back toward BASE_IQ by this fraction of the gap per second.
+const IQ_DECAY := 0.002
+# Every age brings deadlier work (machines, mines, reactors): accidents x this per age.
+const ERA_DANGER := 1.3
 const FOOD_TO_GROW_PER_PERSON := 5.0
 const STARVE_TIME := 4.0
 const MAX_OFFLINE_SECONDS := 8.0 * 3600.0
@@ -43,6 +52,8 @@ var items: Dictionary = {}
 var consumables: Dictionary = {}
 var crafts: Array = []
 var crafted_count: Dictionary = {}
+# maker id -> true while that maker is told to stop working.
+var paused_makers: Dictionary = {}
 var conquered: Dictionary = {}
 var pending_war: Dictionary = {}
 var incoming_war: Dictionary = {}
@@ -65,6 +76,7 @@ var runs := 0
 var total_deaths := 0
 
 var _grow_progress := 0.0
+var _age_progress := 0.0
 var _starve_progress := 0.0
 var _accum := 0.0
 var _mods: Dictionary = {}
@@ -101,6 +113,7 @@ func new_run() -> void:
 	consumables.clear()
 	crafts.clear()
 	crafted_count.clear()
+	paused_makers.clear()
 	conquered.clear()
 	pending_war = {}
 	incoming_war = {}
@@ -123,6 +136,7 @@ func new_run() -> void:
 	iq = BASE_IQ + add("start_iq")
 	starving = false
 	_grow_progress = 0.0
+	_age_progress = 0.0
 	_starve_progress = 0.0
 	for i in int(add("start_relic")):
 		var relic := roll_item("artisan")
@@ -156,6 +170,7 @@ func simulate(dt: float, offline: bool) -> void:
 	_feed_population(dt, offline)
 	if offline:
 		return
+	_forget(dt)
 	_run_accidents(dt)
 	_update_wellbeing(dt)
 	_run_illness(dt)
@@ -221,16 +236,40 @@ func _update_population(dt: float) -> void:
 			_lose_person()
 		return
 	_starve_progress = 0.0
+	# Old age never stops; a sick tribe dies young.
+	_age_progress += old_age_per_second() * dt
+	while _age_progress >= 1.0:
+		_age_progress -= 1.0
+		if _kill_random(1) > 0:
+			post("Someone died of old age.")
+			_changed()
 	# Babies only come when there's a real food stockpile, which spoilage keeps eating.
 	if population <= 0 or population >= pop_cap() or amounts["food"] < population * FOOD_TO_GROW_PER_PERSON:
 		_grow_progress = 0.0
 		return
-	# Bigger populations grow faster so late eras are reachable.
-	_grow_progress += dt * mult("growth") * (1.0 + sqrt(population) * 0.15) / GROW_TIME
-	if _grow_progress >= 1.0:
-		_grow_progress = 0.0
+	_grow_progress += births_per_second() * dt
+	var born := 0
+	while _grow_progress >= 1.0 and population < pop_cap():
+		_grow_progress -= 1.0
 		population += 1
+		born += 1
+	if born > 0:
 		_changed()
+
+
+# Health 60 = normal lifespan; 100 = 1.4x as long, 0 = 0.4x.
+func lifespan() -> float:
+	return LIFESPAN * (0.4 + health / 100.0) * mult("lifespan")
+
+
+func old_age_per_second() -> float:
+	return population / maxf(1.0, lifespan())
+
+
+# Growth upgrades have diminishing returns (4x growth = 2x babies) so births can't outrun death forever.
+func births_per_second() -> float:
+	var fertility := clampf(health / 60.0, 0.2, 1.4) * (0.5 + morale / 100.0)
+	return (BASE_BIRTHS + sqrt(population) / BIRTH_TIME) * sqrt(mult("growth")) * fertility
 
 
 func _teach(dt: float) -> void:
@@ -239,13 +278,18 @@ func _teach(dt: float) -> void:
 		iq = minf(iq_cap(), iq + elders * IQ_PER_ELDER * mult("teaching") * dt)
 
 
+# Only while you play, like spoilage: neglected schooling slowly undoes itself.
+func _forget(dt: float) -> void:
+	iq = maxf(BASE_IQ, iq - (iq - BASE_IQ) * IQ_DECAY * dt)
+
+
 func iq_cap() -> float:
 	return BASE_IQ_CAP + add("iq_cap")
 
 
-# Smarter tribes have fewer accidents: IQ 100 is 4x safer than IQ 50.
+# Smarter tribes have fewer accidents (IQ 100 is 2x safer than IQ 50), but every age is more dangerous.
 func accident_multiplier(job_id: String) -> float:
-	return HAZARD_SCALE * pow(BASE_IQ / maxf(iq, 1.0), 2.0) * mult("hazard") * mult("hazard:" + job_id)
+	return HAZARD_SCALE * BASE_IQ / maxf(iq, 1.0) * pow(ERA_DANGER, maxi(0, era_index())) * mult("hazard") * mult("hazard:" + job_id)
 
 
 func deaths_per_hour(job_id: String) -> float:
@@ -397,7 +441,8 @@ func _run_events(dt: float) -> void:
 	_event_timer -= dt
 	if _event_timer > 0.0:
 		return
-	_event_timer = _rng.randf_range(EventData.MIN_GAP, EventData.MAX_GAP)
+	# Later ages are more crowded and more fragile: disasters come faster and hit harder.
+	_event_timer = _rng.randf_range(EventData.MIN_GAP, EventData.MAX_GAP) / (1.0 + EventData.GAP_SHRINK_PER_ERA * maxi(0, era_index()))
 	var pool: Array = []
 	var total := 0.0
 	for e in EventData.EVENTS:
@@ -449,17 +494,21 @@ func start_event(id: String) -> void:
 	var e := EventData.find(id)
 	var target := _pick_mine() if e.get("when", {}).get("mine", false) else ""
 	var start: Dictionary = e.get("start", {})
-	var defense := 1.0
+	var defense := disaster_severity() if not e["good"] else 1.0
 	if start.get("raid", false):
-		defense = clampf(1.0 - jobs.get("warrior", 0) / maxf(1.0, population * 0.15), 0.2, 1.0)
+		defense *= clampf(1.0 - jobs.get("warrior", 0) / maxf(1.0, population * 0.15), 0.2, 1.0)
 	var notes: PackedStringArray = []
 	for res in start.get("lose", {}):
 		if amounts.has(res):
-			amounts[res] *= 1.0 - start["lose"][res] * defense
-	var destroyed := _destroy_buildings(int(start.get("destroy", 0)))
+			amounts[res] *= 1.0 - minf(0.95, start["lose"][res] * defense)
+	# "destroy" is a minimum; big cities lose a share of everything they built.
+	var n_destroy := int(start.get("destroy", 0))
+	if n_destroy > 0:
+		n_destroy = maxi(n_destroy, ceili(_building_count() * n_destroy * EventData.DESTROY_SHARE * defense))
+	var destroyed := _destroy_buildings(n_destroy)
 	if destroyed > 0:
 		notes.append("%d buildings destroyed" % destroyed)
-	var to_kill := roundi(population * start.get("kill", 0.0) * defense)
+	var to_kill := roundi(population * minf(0.75, start.get("kill", 0.0) * defense))
 	if to_kill > 0:
 		notes.append("%d died" % _kill_random(to_kill))
 	var homeless := population - pop_cap()
@@ -483,6 +532,19 @@ func start_event(id: String) -> void:
 			relic = roll_item("artisan")
 		_grant_item(relic)
 	_changed()
+
+
+# Disasters get worse every age: x1 in the Wood age, x1.25 in Stone, and so on.
+func disaster_severity() -> float:
+	return 1.0 + EventData.SEVERITY_PER_ERA * maxi(0, era_index())
+
+
+func _building_count() -> int:
+	var n := 0
+	for id in buildings:
+		if GameData.find("maker", id).is_empty():
+			n += buildings[id]
+	return n
 
 
 # Destroys up to n random buildings (not item makers). Returns how many.
@@ -839,7 +901,7 @@ func commission_time(maker_id: String) -> float:
 
 
 func start_commission(maker_id: String) -> bool:
-	if GameData.find("maker", maker_id).is_empty():
+	if GameData.find("maker", maker_id).is_empty() or paused_makers.has(maker_id):
 		return false
 	if maker_busy(maker_id) >= maker_slots(maker_id) or not _pay(commission_cost(maker_id)):
 		return false
@@ -854,6 +916,8 @@ func _run_crafts(dt: float) -> void:
 	var speed := mult("craft_speed")
 	var finished: Array = []
 	for c in crafts:
+		if paused_makers.has(c["maker"]):
+			continue
 		c["remaining"] -= dt * speed
 		if c["remaining"] <= 0.0:
 			finished.append(c)
@@ -864,6 +928,15 @@ func _run_crafts(dt: float) -> void:
 		for maker in GameData.MAKERS:
 			while maker_busy(maker["id"]) < maker_slots(maker["id"]) and start_commission(maker["id"]):
 				pass
+
+
+# Paused makers stop crafting (work in progress waits) and take no new commissions.
+func set_maker_paused(maker_id: String, paused: bool) -> void:
+	if paused:
+		paused_makers[maker_id] = true
+	else:
+		paused_makers.erase(maker_id)
+	structure_changed.emit()
 
 
 func roll_item(maker_id: String) -> String:
@@ -1034,26 +1107,35 @@ func start_war(target_id: String, defensive := false) -> bool:
 	return true
 
 
-func finish_war(won: bool) -> void:
+# also: other nations wiped out in the same battle, conquered along with the target.
+func finish_war(won: bool, also: Array = []) -> void:
 	var t := WarData.find_target(pending_war.get("target", ""))
 	var defensive: bool = pending_war.get("defensive", false)
 	pending_war = {}
 	if t.is_empty():
 		return
 	if not won:
-		weariness += 20.0
+		weariness += 25.0
 		if defensive:
 			for id in unlocked:
-				amounts[id] *= 0.7
-			var died := _kill_random(roundi(population * 0.2))
-			var lost := _destroy_buildings(3)
-			post("%s overran you. 30%% of every stockpile taken, %d dead, %d buildings burned." % [t["name"], died, lost])
+				amounts[id] *= 0.6
+			var died := _kill_random(roundi(population * 0.25))
+			var lost := _destroy_buildings(maxi(3, ceili(_building_count() * 0.1)))
+			post("%s and their allies overran you. 40%% of every stockpile taken, %d dead, %d buildings burned." % [t["name"], died, lost])
 		else:
-			post("The war against %s failed. The supplies are gone, and the people are sick of war." % t["name"])
+			# They chase your broken army home.
+			for id in unlocked:
+				amounts[id] *= 0.85
+			var died := _kill_random(roundi(population * 0.08))
+			post("The war against %s failed. They followed you home: 15%% of every stockpile looted, %d dead." % [t["name"], died])
 		_changed()
 		return
 	var tier_before := completed_tiers()
 	conquered[t["id"]] = true
+	for id in also:
+		if not WarData.find_target(id).is_empty() and not conquered.has(id):
+			conquered[id] = true
+			post("%s fell in the same war. It's yours too." % WarData.find_target(id)["name"])
 	var loot := {}
 	for id in unlocked:
 		var gain: float = production_per_second(id) * 180.0 + amounts[id] * 0.15
@@ -1078,7 +1160,8 @@ func _run_war_declarations(dt: float) -> void:
 	_declare_timer -= dt
 	if _declare_timer > 0.0:
 		return
-	_declare_timer = _rng.randf_range(WarData.DECLARE_MIN, WarData.DECLARE_MAX)
+	var speedup := maxf(0.5, 1.0 - WarData.DECLARE_SPEEDUP_PER_CONQUEST * conquered.size())
+	_declare_timer = _rng.randf_range(WarData.DECLARE_MIN, WarData.DECLARE_MAX) * speedup
 	var tier := current_tier()
 	if not tier_unlocked(tier):
 		return
@@ -1093,7 +1176,9 @@ func _run_war_declarations(dt: float) -> void:
 		pick -= t["aggression"]
 		if pick <= 0.0:
 			incoming_war = {"target": t["id"], "countdown": WarData.DECLARE_WARNING}
-			post("WAR! %s has declared war on you! Their army arrives in %d seconds." % [t["name"], int(WarData.DECLARE_WARNING)])
+			var gang := WarData.coalition(t["id"], conquered, true).size() - 1
+			post("WAR! %s has declared war on you%s! Their armies arrive in %d seconds." % [t["name"],
+				" and %d others are joining them" % gang if gang > 0 else "", int(WarData.DECLARE_WARNING)])
 			return
 
 
@@ -1108,9 +1193,9 @@ func legacy_gain() -> int:
 	return gain
 
 
-# Grows with the square root of deaths: 100 deaths = 5 Legacy, 2,500 = 25.
+# Grows with the square root of deaths: 400 deaths = 4 Legacy, 10,000 = 20.
 func deaths_legacy() -> int:
-	return int(sqrt(run_deaths) / 2.0)
+	return int(sqrt(run_deaths) / 5.0)
 
 
 func rebirth() -> int:
@@ -1189,6 +1274,7 @@ func to_dict() -> Dictionary:
 		"items": items.duplicate(),
 		"crafts": crafts.duplicate(true),
 		"crafted_count": crafted_count.duplicate(),
+		"paused_makers": paused_makers.keys(),
 		"conquered": conquered.keys(),
 		"consumables": consumables.duplicate(),
 		"iq": iq,
@@ -1270,4 +1356,6 @@ func from_dict(data: Dictionary) -> void:
 	var saved_crafted: Dictionary = data.get("crafted_count", {})
 	for id in saved_crafted:
 		crafted_count[id] = int(saved_crafted[id])
+	for id in data.get("paused_makers", []):
+		paused_makers[String(id)] = true
 	_changed()

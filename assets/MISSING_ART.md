@@ -1,0 +1,280 @@
+# Missing art
+
+**256 of 264** things still need art.
+
+Everything below has no picture yet. Save it in `assets/` named exactly as written, e.g. `Hut.png`.
+Regenerate with `godot --headless --path . -s tools/missing_art.gd`.
+
+## Screens (1 missing)
+- [ ] `Background.png`
+
+## Resources (8 missing)
+- [ ] `Food.png`
+- [ ] `Stone.png`
+- [ ] `Copper.png`
+- [ ] `Coal.png`
+- [ ] `Steel.png`
+- [ ] `Electricity.png`
+- [ ] `Silicon.png`
+- [ ] `Uranium.png`
+
+## Jobs (17 missing)
+- [ ] `Elder.png`
+- [ ] `Gatherer.png`
+- [ ] `Woodcutter.png`
+- [ ] `Quarrier.png`
+- [ ] `Clay Digger.png`
+- [ ] `Warrior.png`
+- [ ] `Copper Miner.png`
+- [ ] `Bronzesmith.png`
+- [ ] `Iron Miner.png`
+- [ ] `Coal Miner.png`
+- [ ] `Steelworker.png`
+- [ ] `Oil Driller.png`
+- [ ] `Power Plant Operator.png`
+- [ ] `Chip Maker.png`
+- [ ] `Uranium Miner.png`
+- [ ] `Physicist.png`
+- [ ] `Void Engineer.png`
+
+## Buildings (21 missing)
+- [ ] `Hut.png`
+- [ ] `Granary.png`
+- [ ] `Stone House.png`
+- [ ] `Brick House.png`
+- [ ] `Standing Stones.png`
+- [ ] `Well.png`
+- [ ] `Market.png`
+- [ ] `Temple.png`
+- [ ] `Aqueduct.png`
+- [ ] `Courthouse.png`
+- [ ] `Sewer.png`
+- [ ] `Hospital.png`
+- [ ] `School.png`
+- [ ] `Library.png`
+- [ ] `University.png`
+- [ ] `Artisan.png`
+- [ ] `Blacksmith.png`
+- [ ] `Townhouse.png`
+- [ ] `Apartment.png`
+- [ ] `Battery.png`
+- [ ] `Arcology.png`
+
+## Discoveries (14 missing)
+- [ ] `Stone Working.png`
+- [ ] `Pottery.png`
+- [ ] `Warfare.png`
+- [ ] `Copper Smelting.png`
+- [ ] `Bronze Casting.png`
+- [ ] `Iron Working.png`
+- [ ] `Coal Mining.png`
+- [ ] `Steel Making.png`
+- [ ] `Drilling.png`
+- [ ] `Electrification.png`
+- [ ] `Semiconductors.png`
+- [ ] `Nuclear Fission.png`
+- [ ] `Particle Physics.png`
+- [ ] `Void Theory.png`
+
+## Upgrades (101 missing)
+- [ ] `Baskets.png`
+- [ ] `Sharp Sticks.png`
+- [ ] `Campfire Stories.png`
+- [ ] `Stone Axes.png`
+- [ ] `Stone Picks.png`
+- [ ] `Spears.png`
+- [ ] `Clay Pots.png`
+- [ ] `Kilns.png`
+- [ ] `Copper Tools.png`
+- [ ] `Irrigation.png`
+- [ ] `Bronze Tools.png`
+- [ ] `Iron Tools.png`
+- [ ] `Steam Engine.png`
+- [ ] `Refrigeration.png`
+- [ ] `Automation.png`
+- [ ] `Fire Is Hot.png`
+- [ ] `Not All Berries Are Food.png`
+- [ ] `Don't Stand Under Falling Trees.png`
+- [ ] `Cliffs Are Bad.png`
+- [ ] `Mud Is Not Water.png`
+- [ ] `Writing.png`
+- [ ] `Pointy End Goes Outward.png`
+- [ ] `Mine Supports.png`
+- [ ] `Safety Goggles.png`
+- [ ] `Hard Hats.png`
+- [ ] `Radiation Suits.png`
+- [ ] `Herbal Medicine.png`
+- [ ] `Crop Rotation.png`
+- [ ] `Tribal Council.png`
+- [ ] `Universal Currency.png`
+- [ ] `Philosophy.png`
+- [ ] `Code of Laws.png`
+- [ ] `Cranes.png`
+- [ ] `Germ Theory.png`
+- [ ] `Democracy.png`
+- [ ] `Assembly Line.png`
+- [ ] `Vaccines.png`
+- [ ] `Meritocracy.png`
+- [ ] `Construction Robots.png`
+- [ ] `Calloused Hands.png`
+- [ ] `Opposable Thumbs.png`
+- [ ] `Aggressive Pointing.png`
+- [ ] `Carpal Tunnel Syndrome.png`
+- [ ] `Berry Obsession.png`
+- [ ] `Pocket Pants.png`
+- [ ] `Hot Rock Cooking.png`
+- [ ] `The Sniff Test.png`
+- [ ] `Five-Second Rule.png`
+- [ ] `Angry Beavers.png`
+- [ ] `Lumberjack Plaid.png`
+- [ ] `Shouting TIMBER.png`
+- [ ] `Tree Diplomacy.png`
+- [ ] `Rock Appreciation Society.png`
+- [ ] `Hitting Rock With Bigger Rock.png`
+- [ ] `Pet Rocks.png`
+- [ ] `Mud Enthusiasts.png`
+- [ ] `Mud Bath Spa.png`
+- [ ] `Wooden Wheelbarrows.png`
+- [ ] `Mud Pies.png`
+- [ ] `Hut Parties.png`
+- [ ] `Inventing Marriage.png`
+- [ ] `Crowd Surfing.png`
+- [ ] `Arts and Crafts Hour.png`
+- [ ] `Bribing the Gods.png`
+- [ ] `Unpaid Interns.png`
+- [ ] `Hoarding Instinct.png`
+- [ ] `Pointy Sticks.png`
+- [ ] `War Drums.png`
+- [ ] `Standing Army.png`
+- [ ] `Bronze Spears.png`
+- [ ] `Iron Swords.png`
+- [ ] `Ooh, Shiny.png`
+- [ ] `Bronze Age Midlife Crisis.png`
+- [ ] `Heavy Metal.png`
+- [ ] `Coal for Christmas.png`
+- [ ] `Oil Baron Mustache.png`
+- [ ] `Turning It Off and On Again.png`
+- [ ] `Downloading More RAM.png`
+- [ ] `Glow-in-the-Dark Workers.png`
+- [ ] `Accidentally Deleting the Moon.png`
+- [ ] `Staring Into the Void.png`
+- [ ] `Copper Wire.png`
+- [ ] `Casting Molds.png`
+- [ ] `Iron Picks.png`
+- [ ] `Blast Bellows.png`
+- [ ] `Coal Carts.png`
+- [ ] `Coke Ovens.png`
+- [ ] `Bessemer Process.png`
+- [ ] `Steel Rails.png`
+- [ ] `Derricks.png`
+- [ ] `Refineries.png`
+- [ ] `Power Grid.png`
+- [ ] `Light Bulbs.png`
+- [ ] `Clean Rooms.png`
+- [ ] `Moore's Law.png`
+- [ ] `Centrifuges.png`
+- [ ] `Breeder Reactors.png`
+- [ ] `Particle Accelerator.png`
+- [ ] `Magnetic Bottles.png`
+- [ ] `Void Goggles.png`
+- [ ] `Event Horizon.png`
+
+## Items (24 missing)
+- [ ] `Lucky Pebble.png`
+- [ ] `Clay Figurine.png`
+- [ ] `Woven Basket.png`
+- [ ] `Flint Knife.png`
+- [ ] `Carved Totem.png`
+- [ ] `Painted Pot.png`
+- [ ] `Bone Flute.png`
+- [ ] `Stone Wheel.png`
+- [ ] `Obsidian Mirror.png`
+- [ ] `Mammoth Tusk Necklace.png`
+- [ ] `Idol of Plenty.png`
+- [ ] `The First Brick.png`
+- [ ] `Rallying Horn.png`
+- [ ] `Sling Stones.png`
+- [ ] `War Paint.png`
+- [ ] `Fire Pots.png`
+- [ ] `Bronze Shield.png`
+- [ ] `Anvil.png`
+- [ ] `Chariot.png`
+- [ ] `War Banner.png`
+- [ ] `Sword of the First King.png`
+- [ ] `Battering Ram.png`
+- [ ] `Mercenary Contract.png`
+- [ ] `Plague Rats.png`
+
+## Legacy upgrades (11 missing)
+- [ ] `Ancestral Wisdom.png`
+- [ ] `Hardy Genes.png`
+- [ ] `Old Recipes.png`
+- [ ] `Bigger Tribe.png`
+- [ ] `Fertile Ground.png`
+- [ ] `Muscle Memory.png`
+- [ ] `Fast Learners.png`
+- [ ] `Weather Lore.png`
+- [ ] `Folk Medicine.png`
+- [ ] `Stoicism.png`
+- [ ] `Heirloom.png`
+
+## War map lands (59 missing)
+- [ ] `Your Tribe.png`
+- [ ] `Ug's Tribe.png`
+- [ ] `The Mudlands.png`
+- [ ] `The Hill Folk.png`
+- [ ] `River Clans.png`
+- [ ] `The Cave Kings.png`
+- [ ] `Your Kingdom.png`
+- [ ] `Copper Hill Clans.png`
+- [ ] `The Tin Traders' League.png`
+- [ ] `The Bronze Kingdom.png`
+- [ ] `The Horse Lords.png`
+- [ ] `The Walled City of Ur-Kesh.png`
+- [ ] `The Iron Empire.png`
+- [ ] `Your Nation.png`
+- [ ] `The Northern Federation.png`
+- [ ] `The Desert Caliphate.png`
+- [ ] `The Island Shogunate.png`
+- [ ] `The Southern Republic.png`
+- [ ] `The Great Khanate.png`
+- [ ] `The Empire of the Sun.png`
+- [ ] `Earth.png`
+- [ ] `Luna Colony.png`
+- [ ] `Mars Colony.png`
+- [ ] `Venus Cloud Cities.png`
+- [ ] `The Jovian Moons.png`
+- [ ] `The Saturn Ring Miners.png`
+- [ ] `Neptune Deep.png`
+- [ ] `Sol.png`
+- [ ] `The Alpha Centauri Pact.png`
+- [ ] `The Vega Dominion.png`
+- [ ] `The Hive of Cygnus.png`
+- [ ] `The Orion Hegemony.png`
+- [ ] `The Perseus Arm Collective.png`
+- [ ] `The Galactic Core AI.png`
+- [ ] `The Milky Way.png`
+- [ ] `Andromeda.png`
+- [ ] `The Magellanic Clouds.png`
+- [ ] `The Triangulum Swarm.png`
+- [ ] `The Void Leviathans.png`
+- [ ] `The Quasar Lords.png`
+- [ ] `The Great Attractor.png`
+- [ ] `Our Universe.png`
+- [ ] `The Cheese Universe.png`
+- [ ] `The Universe Where Dinosaurs Won.png`
+- [ ] `The Paper Dimension.png`
+- [ ] `The Clockwork Cosmos.png`
+- [ ] `The Mirror Universe.png`
+- [ ] `Your Evil Twin's Universe.png`
+- [ ] `The Multiverse.png`
+- [ ] `The Dream Realms.png`
+- [ ] `The Infinite Library.png`
+- [ ] `The Realm of Forms.png`
+- [ ] `The Timeless Expanse.png`
+- [ ] `The Static.png`
+- [ ] `The Last Light.png`
+- [ ] `Everything.png`
+- [ ] `The Architects.png`
+- [ ] `The Writer.png`
+- [ ] `The Void Itself.png`

@@ -3,10 +3,15 @@ extends Control
 const MAIN_SCENE := "res://scenes/main.tscn"
 const TICK := 0.1
 const REDRAW_INTERVAL := 0.2
-const MAP_WIDTH := 96
-const MAP_HEIGHT := 54
+const MAP_WIDTH := 400
+const MAP_HEIGHT := 220
+# Hundreds of small factions fill the map around the named nations; more on bigger maps.
+const MINOR_FACTIONS := 160
+const MINOR_FACTIONS_PER_TIER := 15
+const START_ZOOM := 3.0
 const PLAYER_COLOR := Color(0.25, 0.55, 1.0)
-const ENEMY_COLORS := [Color(0.85, 0.3, 0.25), Color(0.9, 0.6, 0.2), Color(0.6, 0.35, 0.7), Color(0.35, 0.75, 0.3)]
+const ENEMY_COLORS := [Color(0.85, 0.3, 0.25), Color(0.9, 0.6, 0.2), Color(0.6, 0.35, 0.7), Color(0.35, 0.75, 0.3),
+	Color(0.9, 0.85, 0.3), Color(0.3, 0.8, 0.8), Color(0.85, 0.45, 0.65), Color(0.6, 0.45, 0.3), Color(0.75, 0.75, 0.75)]
 
 var map := InvasionMap.new()
 var _country: Dictionary
@@ -30,6 +35,7 @@ var _buff_label: Label
 var _base_stats := {}
 # buff: {name, stat, mult, remaining}
 var _buffs: Array = []
+var _items_used := 0
 
 
 func _ready() -> void:
@@ -49,14 +55,26 @@ func _ready() -> void:
 		"troop_mult": army / WarData.BASE_ARMY,
 		"regen_mult": Game.mult("army:regen"),
 		"attack_mult": Game.mult("army:attack"),
+		"spawns": player_spawns(_country["tier"], Game.conquered),
 	}
-	map.generate(MAP_WIDTH, MAP_HEIGHT, randi(), player, enemies_for(_country, tier, _defensive))
+	map.generate(MAP_WIDTH, MAP_HEIGHT, randi(), player, enemies_for(_country, tier, _defensive, Game.conquered),
+		MINOR_FACTIONS + MINOR_FACTIONS_PER_TIER * _country["tier"], tier["strength"], tier["style"])
 	if _defensive:
 		for idx in range(1, map.nations.size()):
-			map.nations[idx]["troops"] = map.max_troops(idx)
+			if map.nations[idx]["team"] == InvasionMap.Team.HOSTILE:
+				map.nations[idx]["troops"] = map.max_troops(idx)
 	_base_stats = {"attack_mult": player["attack_mult"], "regen_mult": player["regen_mult"]}
 	_build_ui()
 	_refresh_hud()
+	_start_camera()
+
+
+# Starts zoomed in on your land once the layout knows how big the view is.
+func _start_camera() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if is_instance_valid(_view):
+		_view.focus_on(map.label_pos(InvasionMap.PLAYER), START_ZOOM)
 
 
 func _build_ui() -> void:
@@ -109,9 +127,14 @@ func _build_ui() -> void:
 	_view.tile_hovered.connect(_on_tile_hovered)
 	middle.add_child(_view)
 	_view.setup(map, _style["colors"])
+	var side := ScrollContainer.new()
+	side.custom_minimum_size.x = 250
+	side.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	middle.add_child(side)
 	_nations_label = Label.new()
-	_nations_label.custom_minimum_size.x = 200
-	middle.add_child(_nations_label)
+	_nations_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_nations_label.custom_minimum_size.x = 235
+	side.add_child(_nations_label)
 
 	var items_row := HBoxContainer.new()
 	root.add_child(items_row)
@@ -126,7 +149,7 @@ func _build_ui() -> void:
 	var bottom := HBoxContainer.new()
 	root.add_child(bottom)
 	_hint_label = Label.new()
-	_hint_label.text = "Click land next to your border to send troops into it."
+	_hint_label.text = "Click land next to your border to send troops. Scroll to zoom, right-drag or WASD to move."
 	_hint_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom.add_child(_hint_label)
 	_hover_label = Label.new()
@@ -182,7 +205,7 @@ func _rebuild_hotbar() -> void:
 		_hotbar.remove_child(child)
 		child.queue_free()
 	var title := Label.new()
-	title.text = "Items:"
+	title.text = "Items (%d/%d used):" % [_items_used, WarData.BATTLE_ITEM_LIMIT]
 	_hotbar.add_child(title)
 	if Game.consumables.is_empty():
 		var none := Label.new()
@@ -207,9 +230,13 @@ func _rebuild_hotbar() -> void:
 func use_item(item_id: String) -> void:
 	if _finished:
 		return
+	if _items_used >= WarData.BATTLE_ITEM_LIMIT:
+		_hint_label.text = "You can only use %d items per battle." % WarData.BATTLE_ITEM_LIMIT
+		return
 	var effects := Game.use_consumable(item_id)
 	if effects.is_empty():
 		return
+	_items_used += 1
 	var it := GameData.find("item", item_id)
 	for e in effects:
 		match e["type"]:
@@ -217,7 +244,8 @@ func use_item(item_id: String) -> void:
 				map.nations[InvasionMap.PLAYER]["troops"] += map.max_troops(InvasionMap.PLAYER) * e["pct"]
 			"enemy_troops":
 				for idx in range(1, map.nations.size()):
-					map.nations[idx]["troops"] *= 1.0 - e["pct"]
+					if map.nations[idx]["team"] == InvasionMap.Team.HOSTILE:
+						map.nations[idx]["troops"] *= 1.0 - e["pct"]
 			"buff":
 				_buffs.append({"name": it["name"], "stat": e["stat"], "mult": e["mult"], "remaining": e["time"]})
 	_apply_buffs()
@@ -246,15 +274,34 @@ func _apply_buffs() -> void:
 	_buff_label.text = "  ".join(parts)
 
 
-# Bigger targets bring allies into the fight.
-static func enemies_for(target: Dictionary, tier: Dictionary, defensive: bool) -> Array:
-	var strength: float = target["power"] * tier["strength"]
-	var aggression: float = maxf(target["aggression"], 0.7) if defensive else target["aggression"]
-	var enemies := [{"name": target["name"], "color": ENEMY_COLORS[0], "troop_mult": strength, "aggression": aggression}]
-	if target["power"] >= 1.2:
-		enemies.append({"name": "%s Allies" % target["name"], "color": ENEMY_COLORS[1], "troop_mult": strength * 0.6, "aggression": aggression * 0.8})
-	if target["power"] >= 1.7:
-		enemies.append({"name": "%s Vassals" % target["name"], "color": ENEMY_COLORS[2], "troop_mult": strength * 0.5, "aggression": aggression * 0.8})
+# Your home and every land you already took on this map, as spawn points.
+static func player_spawns(tier_index: int, conquered: Dictionary) -> Array:
+	var tier: Dictionary = WarData.TIERS[tier_index]
+	var result: Array = [tier["home"]]
+	for t in tier["targets"]:
+		if conquered.has(t["id"]):
+			result.append(t["pos"])
+	return result
+
+
+# The whole map fights: the target and its neighbours gang up on you, everyone else
+# watches and joins in if you look weak.
+static func enemies_for(target: Dictionary, tier: Dictionary, defensive: bool, conquered: Dictionary = {}) -> Array:
+	var hostile := WarData.coalition(target["id"], conquered, defensive)
+	var enemies: Array = []
+	var k := 0
+	for t in tier["targets"]:
+		if conquered.has(t["id"]):
+			continue
+		var at_war: bool = hostile.has(t["id"])
+		var aggression: float = t["aggression"]
+		if at_war:
+			aggression = maxf(aggression, 0.7) if defensive else maxf(aggression, 0.5)
+		enemies.append({"name": t["name"], "id": t["id"], "color": ENEMY_COLORS[k % ENEMY_COLORS.size()],
+			"troop_mult": t["power"] * tier["strength"], "aggression": aggression, "pos": t["pos"],
+			"team": InvasionMap.Team.HOSTILE if at_war else InvasionMap.Team.BYSTANDER,
+			"objective": t["id"] == target["id"]})
+		k += 1
 	return enemies
 
 
@@ -262,7 +309,14 @@ func _end(won: bool) -> void:
 	if _finished:
 		return
 	_finished = true
-	Game.finish_war(won)
+	# Any other nation wiped off the map in this battle is yours too.
+	var also: Array = []
+	if won:
+		for idx in range(1, map.nations.size()):
+			var n: Dictionary = map.nations[idx]
+			if not map.is_alive(idx) and n["id"] != "" and n["id"] != _country["id"]:
+				also.append(n["id"])
+	Game.finish_war(won, also)
 
 
 func _return_home() -> void:
@@ -276,10 +330,26 @@ func _refresh_hud() -> void:
 		NumFormat.fmt(map.troops_attacking(InvasionMap.PLAYER)), roundi(map.land_share(InvasionMap.PLAYER) * 100.0)]
 	_slider_label.text = "Send %d%%" % int(_slider.value)
 	var lines: PackedStringArray = []
+	var minors := 0
+	var minors_alive := 0
+	var minor_enemies: PackedStringArray = []
 	for idx in map.nations.size():
 		var n: Dictionary = map.nations[idx]
-		var state := "%s troops, %d%% land" % [NumFormat.fmt(n["troops"]), roundi(map.land_share(idx) * 100.0)] if map.is_alive(idx) else "defeated"
-		lines.append("%s\n  %s" % [n["name"], state])
+		if n["minor"]:
+			minors += 1
+			if map.is_alive(idx):
+				minors_alive += 1
+				if n["team"] == InvasionMap.Team.HOSTILE:
+					minor_enemies.append(n["name"])
+			continue
+		var state := "%s troops, %.1f%% land" % [NumFormat.fmt(n["troops"]), map.land_share(idx) * 100.0] if map.is_alive(idx) else "defeated"
+		var side := ""
+		if idx != InvasionMap.PLAYER:
+			side = " [TARGET]" if n["objective"] else (" [AT WAR]" if n["team"] == InvasionMap.Team.HOSTILE else " [watching]")
+		lines.append("%s%s\n  %s" % [n["name"], side, state])
+	lines.append("\nMinor factions: %d of %d left" % [minors_alive, minors])
+	if not minor_enemies.is_empty():
+		lines.append("Minor factions at war with you (%d):\n  %s" % [minor_enemies.size(), "\n  ".join(minor_enemies)])
 	_nations_label.text = "\n".join(lines)
 
 
@@ -291,6 +361,8 @@ func _on_tile_clicked(tile: Vector2i) -> void:
 		_hint_label.text = "That's your land. Click land next to your border."
 	elif target == InvasionMap.WATER:
 		_hint_label.text = "Your troops can't swim."
+	elif target >= 0 and map.nations[target]["team"] == InvasionMap.Team.BYSTANDER and not Input.is_key_pressed(KEY_SHIFT):
+		_hint_label.text = "%s is staying out of it. Shift+click to attack them anyway (they join the war)." % map.nations[target]["name"]
 	elif map.send_attack(InvasionMap.PLAYER, target, _slider.value / 100.0):
 		var name: String = "neutral land" if target == InvasionMap.NEUTRAL else map.nations[target]["name"]
 		_hint_label.text = "Attacking %s with %d%% of your troops." % [name, int(_slider.value)]

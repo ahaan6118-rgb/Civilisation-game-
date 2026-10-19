@@ -441,6 +441,11 @@ func _refresh() -> void:
 		Game.population, Game.pop_cap(), Game.idle(), NumFormat.fmt(food_use),
 		Game.iq, Game.iq_cap(), Game.run_deaths, NumFormat.fmt(hourly)]
 	pop_text += "\nMorale: %.0f (work %.2fx)    Health: %.0f" % [Game.morale, Game.morale_factor(), Game.health]
+	var births: float = Game.births_per_second() * 3600.0 if Game.population < Game.pop_cap() else 0.0
+	var old_age: float = Game.old_age_per_second() * 3600.0
+	pop_text += "\nBirths: ~%s/h    Old age: ~%s/h    Lifespan: %s" % [NumFormat.fmt(births), NumFormat.fmt(old_age), NumFormat.duration(Game.lifespan())]
+	if Game.illness_per_hour() + old_age + hourly > births:
+		pop_text += "\nYour people are dying faster than they're born!"
 	if Game.crime_rate > 0.0:
 		pop_text += "\nCrime is stealing %.1f%% of your stockpiles per second!" % (Game.crime_rate * 100.0)
 	if Game.illness_per_hour() >= 1.0:
@@ -508,8 +513,10 @@ func _refresh() -> void:
 		var maker_id: String = item["maker"]
 		var cost := Game.commission_cost(maker_id)
 		var free := Game.maker_slots(maker_id) - Game.maker_busy(maker_id)
-		item["button"].text = "Commission an item (%d free)\nCost: %s" % [free, NumFormat.cost(cost)]
-		item["button"].disabled = free <= 0 or not Game.can_afford(cost)
+		var paused: bool = Game.paused_makers.has(maker_id)
+		var title := "Stopped. Press Resume to craft again." if paused else "Commission an item (%d free)" % free
+		item["button"].text = "%s\nCost: %s" % [title, NumFormat.cost(cost)]
+		item["button"].disabled = paused or free <= 0 or not Game.can_afford(cost)
 	for item in _craft_bars:
 		var craft: Dictionary = item["craft"]
 		var bar: ProgressBar = item["bar"]
@@ -542,7 +549,7 @@ func _rebuild_crafting() -> void:
 		var slots := Game.maker_slots(maker_id)
 		var header := Label.new()
 		header.add_theme_font_size_override("font_size", 18)
-		header.text = "%ss: %d" % [maker["name"], slots]
+		header.text = "%ss: %d%s" % [maker["name"], slots, "  (stopped)" if Game.paused_makers.has(maker_id) else ""]
 		_craft_list.add_child(header)
 		if slots == 0:
 			var hint := Label.new()
@@ -556,7 +563,15 @@ func _rebuild_crafting() -> void:
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		button.tooltip_text = "Pay the cost to get a random item."
 		button.pressed.connect(func(): Game.start_commission(maker_id))
-		_craft_list.add_child(button)
+		var row := HBoxContainer.new()
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(button)
+		var stop := Button.new()
+		stop.text = "Resume" if Game.paused_makers.has(maker_id) else "Stop"
+		stop.tooltip_text = "Stop or resume this maker. Stopped makers pause their crafts and take no new ones."
+		stop.pressed.connect(func(): Game.set_maker_paused(maker_id, not Game.paused_makers.has(maker_id)))
+		row.add_child(stop)
+		_craft_list.add_child(row)
 		_commission_buttons.append({"button": button, "maker": maker_id})
 		for craft in Game.crafts:
 			if craft["maker"] != maker_id:
@@ -617,6 +632,8 @@ func _rebuild_crafting() -> void:
 		_craft_list.add_child(row)
 
 	var active := Game.active_synergies()
+	if GameData.SYNERGIES.is_empty():
+		return
 	var syn_header := Label.new()
 	syn_header.add_theme_font_size_override("font_size", 18)
 	syn_header.text = "Synergies (%d / %d found)" % [active.size(), GameData.SYNERGIES.size()]

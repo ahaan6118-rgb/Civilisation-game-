@@ -2,12 +2,18 @@ class_name WarData
 extends RefCounted
 
 const BASE_ARMY := 300.0
-const LEGACY_PER_TIER := 10
+const LEGACY_PER_TIER := 5
 const NEIGHBOUR_RANGE := 0.42
 # Neighbours declare war every DECLARE_MIN..DECLARE_MAX seconds while you play (once Warfare is known).
-const DECLARE_MIN := 300.0
-const DECLARE_MAX := 540.0
-const DECLARE_WARNING := 15.0
+const DECLARE_MIN := 180.0
+const DECLARE_MAX := 360.0
+const DECLARE_WARNING := 20.0
+# Every land you take scares the rest: they declare this much sooner each conquest (down to half).
+const DECLARE_SPEEDUP_PER_CONQUEST := 0.1
+# Nations this aggressive always join a war against you on their map.
+const ALWAYS_JOIN_AGGRESSION := 0.5
+# Most consumables you can use in one battle.
+const BATTLE_ITEM_LIMIT := 3
 
 # Each conquest makes this run permanently stronger; finishing a tier does more.
 const CONQUEST_EFFECTS := [{"key": "job:all", "mult": 1.1}, {"key": "army:size", "mult": 1.15}]
@@ -147,4 +153,21 @@ static func neighbours(tier_index: int, node_id: String) -> Array:
 			nearest = id
 	if result.is_empty():
 		result.append(nearest)
+	return result
+
+
+# Who fights you when you go to war with target_id: the target plus every unconquered neighbour of it
+# (they gang up), and when you're the one attacked, every aggressive nation on the map as well.
+static func coalition(target_id: String, conquered: Dictionary, defensive: bool) -> Array:
+	var t := find_target(target_id)
+	if t.is_empty():
+		return []
+	var result: Array = [target_id]
+	for n in neighbours(t["tier"], target_id):
+		if n != "home" and not conquered.has(n) and not result.has(n):
+			result.append(n)
+	if defensive:
+		for other in TIERS[t["tier"]]["targets"]:
+			if other["aggression"] >= ALWAYS_JOIN_AGGRESSION and not conquered.has(other["id"]) and not result.has(other["id"]):
+				result.append(other["id"])
 	return result

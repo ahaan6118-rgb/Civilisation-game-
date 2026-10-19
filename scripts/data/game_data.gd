@@ -99,7 +99,7 @@ const JOBS := [
 # Keys: pop_cap, growth, click, click:<resource>, click_cps (click also gives this fraction of the
 # resource's production/s), job:<job>, job:all, spoil:<resource>, food_use, craft_speed, luck, auto_craft,
 # army:size, army:regen, army:attack, iq_cap, teaching, hazard, hazard:<job or idle>,
-# morale, health, crime, build_cost, plague_risk, bad_events.
+# morale, health, lifespan, crime, build_cost, plague_risk, bad_events.
 const BUILDINGS := [
 	{"id": "hut", "name": "Hut", "requires": "wood", "cost": {"wood": 15.0}, "scale": 1.3,
 		"desc": "+3 max population.", "effects": [{"key": "pop_cap", "add": 3}]},
@@ -124,7 +124,7 @@ const BUILDINGS := [
 	{"id": "sewer", "name": "Sewer", "requires": "iron", "cost": {"iron": 3e5, "stone": 3e6}, "scale": 1.5,
 		"desc": "+10 health.", "effects": [{"key": "health", "add": 10}]},
 	{"id": "hospital", "name": "Hospital", "requires": "electricity", "cost": {"electricity": 5e9, "steel": 5e9}, "scale": 1.5,
-		"desc": "+20 health.", "effects": [{"key": "health", "add": 20}]},
+		"desc": "+20 health, people live 10% longer.", "effects": [{"key": "health", "add": 20}, {"key": "lifespan", "mult": 1.1}]},
 	{"id": "school", "name": "School", "requires": "clay", "cost": {"wood": 2000.0, "clay": 500.0}, "scale": 1.6,
 		"desc": "+5 Tribe IQ cap.", "effects": [{"key": "iq_cap", "add": 5}]},
 	{"id": "library", "name": "Library", "requires": "iron", "cost": {"iron": 2e5, "clay": 1e6}, "scale": 1.6,
@@ -237,8 +237,8 @@ const UPGRADES := [
 		"desc": "Buildings 20% cheaper.", "flavor": "",
 		"effects": [{"key": "build_cost", "mult": 0.8}]},
 	{"id": "germ_theory", "name": "Germ Theory", "requires": "steel", "cost": {"steel": 5e8},
-		"desc": "+15 health, plague half as likely.", "flavor": "",
-		"effects": [{"key": "health", "add": 15}, {"key": "plague_risk", "mult": 0.5}]},
+		"desc": "+15 health, plague half as likely, people live 25% longer.", "flavor": "",
+		"effects": [{"key": "health", "add": 15}, {"key": "plague_risk", "mult": 0.5}, {"key": "lifespan", "mult": 1.25}]},
 	{"id": "democracy", "name": "Democracy", "requires": "steel", "cost": {"steel": 1e9},
 		"desc": "+15 morale.", "flavor": "",
 		"effects": [{"key": "morale", "add": 15}]},
@@ -246,8 +246,8 @@ const UPGRADES := [
 		"desc": "Buildings 30% cheaper.", "flavor": "",
 		"effects": [{"key": "build_cost", "mult": 0.7}]},
 	{"id": "vaccines", "name": "Vaccines", "requires": "electricity", "cost": {"electricity": 2e10},
-		"desc": "+20 health, plague 70% less likely.", "flavor": "",
-		"effects": [{"key": "health", "add": 20}, {"key": "plague_risk", "mult": 0.3}]},
+		"desc": "+20 health, plague 70% less likely, people live 25% longer.", "flavor": "",
+		"effects": [{"key": "health", "add": 20}, {"key": "plague_risk", "mult": 0.3}, {"key": "lifespan", "mult": 1.25}]},
 	{"id": "meritocracy", "name": "Meritocracy", "requires": "silicon", "cost": {"silicon": 2e11},
 		"desc": "+15 morale, +30 IQ cap.", "flavor": "",
 		"effects": [{"key": "morale", "add": 15}, {"key": "iq_cap", "add": 30}]},
@@ -574,64 +574,44 @@ const ITEMS := [
 		"use": [{"type": "enemy_troops", "pct": 0.6}]},
 ]
 
-# Owning every listed item activates the synergy once.
-const SYNERGIES := [
-	{"id": "hunter_gatherer", "name": "Hunter-Gatherer", "items": ["woven_basket", "flint_knife"],
-		"desc": "Gatherers +100% per Woven Basket, Woodcutters +100% per Flint Knife.",
-		"effects": [{"key": "job:gatherer", "per": "item:woven_basket", "pct": 1.0}, {"key": "job:woodcutter", "per": "item:flint_knife", "pct": 1.0}]},
-	{"id": "superstitious", "name": "Superstitious", "items": ["lucky_pebble", "clay_figurine"],
-		"desc": "Clicking gathers 5x and also gives 5% of production per second.",
-		"effects": [{"key": "click", "mult": 5.0}, {"key": "click_cps", "add": 0.05}]},
-	{"id": "potters_wheel", "name": "Potter's Wheel", "items": ["stone_wheel", "painted_pot"],
-		"desc": "Clay Diggers and Quarriers produce 10x.",
-		"effects": [{"key": "job:clay_digger", "mult": 10.0}, {"key": "job:quarrier", "mult": 10.0}]},
-	{"id": "shaman", "name": "Shaman", "items": ["carved_totem", "bone_flute", "obsidian_mirror"],
-		"desc": "All workers +25% per relic owned, rare items 2x more likely.",
-		"effects": [{"key": "job:all", "per": "items", "pct": 0.25}, {"key": "luck", "mult": 2.0}]},
-	{"id": "feast", "name": "The Feast", "items": ["tusk_necklace", "painted_pot", "woven_basket"],
-		"desc": "Food never spoils and people eat half as much.",
-		"effects": [{"key": "spoil:food", "mult": 0.0}, {"key": "food_use", "mult": 0.5}]},
-	{"id": "god_complex", "name": "God Complex", "items": ["idol_of_plenty", "the_first_brick"],
-		"desc": "All workers produce 10x.", "effects": [{"key": "job:all", "mult": 10.0}]},
-	{"id": "phalanx", "name": "Phalanx", "items": ["bronze_shield", "war_banner"],
-		"desc": "Army size 3x, troops regenerate 2x faster.",
-		"effects": [{"key": "army:size", "mult": 3.0}, {"key": "army:regen", "mult": 2.0}]},
-	{"id": "forge_of_kings", "name": "Forge of Kings", "items": ["anvil", "sword_of_the_first_king"],
-		"desc": "All workers produce 5x, troops conquer land 4x cheaper.",
-		"effects": [{"key": "job:all", "mult": 5.0}, {"key": "army:attack", "mult": 4.0}]},
-]
+# Owning every listed item activates the synergy once. Left empty on purpose: write your own here.
+# Format: {"id": "my_combo", "name": "My Combo", "items": ["woven_basket", "flint_knife"], "desc": "...",
+#          "effects": [{"key": "job:all", "mult": 10.0}]}
+# "effects" use the same keys as everything else (see the list above BUILDINGS); "per" effects scale with
+# a counter, e.g. {"key": "job:gatherer", "per": "item:woven_basket", "pct": 1.0} = +100% per basket.
+const SYNERGIES: Array = []
 
 # --- rebirth ---------------------------------------------------------------------
 
 # Legacy earned on rebirth for each resource unlocked during the run, plus per conquest (deaths: see Game.deaths_legacy).
-const ERA_LEGACY := {"stone": 1, "clay": 2, "copper": 4, "bronze": 6, "iron": 9, "coal": 12, "steel": 16, "oil": 20,
-	"electricity": 25, "silicon": 30, "uranium": 36, "antimatter": 43, "dark_matter": 50}
-const LEGACY_PER_CONQUEST := 3
+const ERA_LEGACY := {"stone": 0, "clay": 0, "copper": 1, "bronze": 1, "iron": 2, "coal": 3, "steel": 4, "oil": 5,
+	"electricity": 7, "silicon": 9, "uranium": 12, "antimatter": 15, "dark_matter": 20}
+const LEGACY_PER_CONQUEST := 1
 
 # Bought with Legacy; levels last forever. Level n costs cost * growth^n. Effects apply once per level.
 # Special keys: start_pop, start_food, start_iq, start_relic (applied when a run starts).
 const PRESTIGE := [
-	{"id": "ancestral_wisdom", "name": "Ancestral Wisdom", "max": 5, "cost": 1, "growth": 2,
+	{"id": "ancestral_wisdom", "name": "Ancestral Wisdom", "max": 5, "cost": 3, "growth": 3,
 		"desc": "+10 starting IQ and IQ cap per level.", "effects": [{"key": "start_iq", "add": 10}, {"key": "iq_cap", "add": 10}]},
-	{"id": "hardy_genes", "name": "Hardy Genes", "max": 5, "cost": 1, "growth": 2,
+	{"id": "hardy_genes", "name": "Hardy Genes", "max": 5, "cost": 3, "growth": 3,
 		"desc": "Accidents 15% rarer per level.", "effects": [{"key": "hazard", "mult": 0.85}]},
-	{"id": "old_recipes", "name": "Old Recipes", "max": 5, "cost": 1, "growth": 2,
+	{"id": "old_recipes", "name": "Old Recipes", "max": 5, "cost": 3, "growth": 3,
 		"desc": "Food spoils 15% slower per level.", "effects": [{"key": "spoil:food", "mult": 0.85}]},
-	{"id": "bigger_tribe", "name": "Bigger Tribe", "max": 5, "cost": 2, "growth": 2,
+	{"id": "bigger_tribe", "name": "Bigger Tribe", "max": 5, "cost": 6, "growth": 3,
 		"desc": "Start with +2 people and +50 food per level; +2 max population.", "effects": [{"key": "start_pop", "add": 2}, {"key": "start_food", "add": 50}, {"key": "pop_cap", "add": 2}]},
-	{"id": "fertile_ground", "name": "Fertile Ground", "max": 5, "cost": 2, "growth": 2,
+	{"id": "fertile_ground", "name": "Fertile Ground", "max": 5, "cost": 6, "growth": 3,
 		"desc": "Population grows 20% faster per level.", "effects": [{"key": "growth", "mult": 1.2}]},
-	{"id": "muscle_memory", "name": "Muscle Memory", "max": 5, "cost": 1, "growth": 2,
+	{"id": "muscle_memory", "name": "Muscle Memory", "max": 5, "cost": 3, "growth": 3,
 		"desc": "Clicking gathers 2x per level.", "effects": [{"key": "click", "mult": 2.0}]},
-	{"id": "fast_learners", "name": "Fast Learners", "max": 5, "cost": 2, "growth": 2,
+	{"id": "fast_learners", "name": "Fast Learners", "max": 5, "cost": 6, "growth": 3,
 		"desc": "Elders teach 25% faster per level.", "effects": [{"key": "teaching", "mult": 1.25}]},
-	{"id": "weather_lore", "name": "Weather Lore", "max": 5, "cost": 2, "growth": 2,
+	{"id": "weather_lore", "name": "Weather Lore", "max": 5, "cost": 6, "growth": 3,
 		"desc": "Bad events 15% rarer per level.", "effects": [{"key": "bad_events", "mult": 0.85}]},
-	{"id": "folk_medicine", "name": "Folk Medicine", "max": 5, "cost": 1, "growth": 2,
+	{"id": "folk_medicine", "name": "Folk Medicine", "max": 5, "cost": 3, "growth": 3,
 		"desc": "+8 health per level.", "effects": [{"key": "health", "add": 8}]},
-	{"id": "stoicism", "name": "Stoicism", "max": 5, "cost": 1, "growth": 2,
+	{"id": "stoicism", "name": "Stoicism", "max": 5, "cost": 3, "growth": 3,
 		"desc": "+6 morale per level.", "effects": [{"key": "morale", "add": 6}]},
-	{"id": "heirloom", "name": "Heirloom", "max": 3, "cost": 5, "growth": 3,
+	{"id": "heirloom", "name": "Heirloom", "max": 3, "cost": 15, "growth": 4,
 		"desc": "Start each run with a random Artisan relic per level.", "effects": [{"key": "start_relic", "add": 1}]},
 ]
 

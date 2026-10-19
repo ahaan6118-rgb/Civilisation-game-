@@ -35,6 +35,8 @@ func _run() -> void:
 	_game = root.get_node("Game")
 	_game.set_process(false)
 	root.get_node("SaveManager").set_process(false)
+	# A leftover save would otherwise be loaded by SaveManager's deferred load in the middle of the tests.
+	root.get_node("SaveManager").wipe()
 	_game._rng.seed = 12345
 	_game.events_enabled = false
 
@@ -77,9 +79,19 @@ func _run() -> void:
 	_sim(4.5)
 	_check(_game.population == 2, "a person starves without food")
 	_game.reset()
-	_game.amounts["food"] = 100.0
-	_sim(25.0)
-	_check(_game.population == 4, "population grows with food")
+	_game.amounts["food"] = 1000.0
+	_check(is_equal_approx(_game.births_per_second(), 1.0 / 120.0 + sqrt(3.0) / 45.0), "3 healthy people: a baby about every 21s")
+	_check(is_equal_approx(_game.old_age_per_second(), 3.0 / 420.0), "and one dies of old age about every 140s")
+	_game._age_progress = -100.0
+	_sim(90.0)
+	_check(_game.population >= 4, "population grows with food")
+	_game.reset()
+	_game.population = 10
+	_game.health = 0.0
+	_check(_game.old_age_per_second() > _game.births_per_second(), "a sick tribe dies faster than it breeds")
+	_game.health = 60.0
+	_game.population = 200
+	_check(_game.old_age_per_second() > _game.births_per_second(), "a big town with no growth bonuses shrinks")
 
 	print("unlocking stone")
 	_game.reset()
@@ -149,14 +161,10 @@ func _run() -> void:
 	_check(_game.total_items() + _consumable_count() == 1 and _game.crafts.is_empty(), "commission finished into one item")
 	_game.items = {"woven_basket": 2, "flint_knife": 1}
 	_game.rebuild_modifiers()
-	_check(_game.active_synergies().size() == 1, "Hunter-Gatherer synergy active")
-	_check(is_equal_approx(_game.job_multiplier("gatherer") / _game.morale_factor(), 1.6 * 3.0), "duplicates add linearly, synergy scales per basket")
+	_check(is_equal_approx(_game.job_multiplier("gatherer") / _game.morale_factor(), 1.6), "duplicates add linearly")
 	_game.items = {"painted_pot": 3}
 	_game.rebuild_modifiers()
 	_check(is_equal_approx(_game.mult("spoil:food"), 1.0 / (1.0 + (1.0 / 0.85 - 1.0) * 3.0)), "stacked reductions have diminishing returns")
-	_game.items = {"tusk_necklace": 1, "painted_pot": 1, "woven_basket": 1}
-	_game.rebuild_modifiers()
-	_check(_game.mult("spoil:food") == 0.0, "The Feast stops food spoiling")
 	_game.items = {"woven_basket": 2, "flint_knife": 1}
 	_game.rebuild_modifiers()
 	var counts := {}
@@ -237,7 +245,21 @@ func _run() -> void:
 	root.add_child(battle)
 	for i in 10:
 		await process_frame
-	_check(battle.map.nations.size() == 2 and battle.map.nations[1]["name"] == "Ug's Tribe", "the battle map builds")
+	var named := 0
+	var minor_count := 0
+	for n in battle.map.nations:
+		if n["minor"]:
+			minor_count += 1
+		else:
+			named += 1
+	_check(named == 6 and battle.map.nations[1]["name"] == "Ug's Tribe" and battle.map.nations[1]["objective"], "the whole valley is on the battle map")
+	_check(minor_count >= 100, "with %d minor factions" % minor_count)
+	var hostile := 0
+	for n in battle.map.nations:
+		if n["team"] == InvasionMap.Team.HOSTILE:
+			hostile += 1
+	_check(hostile >= 2, "Ug's neighbours gang up on you (%d at war)" % hostile)
+	_check(battle.map.nations[0]["tiles"] < battle.map.nations[1]["tiles"], "you start smaller than them")
 	_game.consumables = {"rallying_horn": 1, "sling_stones": 1, "fire_pots": 1}
 	var you: Dictionary = battle.map.nations[0]
 	var troops_before: float = you["troops"]
@@ -251,6 +273,9 @@ func _run() -> void:
 	_check(is_equal_approx(you["attack_mult"], base_attack * 1.5), "Sling Stones buff attack")
 	battle._update_buffs(21.0)
 	_check(is_equal_approx(you["attack_mult"], base_attack), "buff wears off")
+	_game.consumables = {"rallying_horn": 1}
+	battle.use_item("rallying_horn")
+	_check(_game.consumables.get("rallying_horn", 0) == 1, "only %d items per battle" % WarData.BATTLE_ITEM_LIMIT)
 	battle.queue_free()
 	var wood_before: float = _game.amounts["wood"]
 	_game.finish_war(true)
@@ -272,7 +297,7 @@ func _run() -> void:
 	var pop_before_defeat: int = _game.population
 	_game.amounts["clay"] = 1000.0
 	_game.finish_war(false)
-	_check(_game.amounts["clay"] == 700.0 and _game.population < pop_before_defeat, "losing a defence costs stock and people")
+	_check(_game.amounts["clay"] == 600.0 and _game.population < pop_before_defeat, "losing a defence costs stock and people")
 	_game.incoming_war = {"target": "tin_league", "countdown": 3.0}
 	var war_save: Dictionary = JSON.parse_string(JSON.stringify(_game.to_dict()))
 	_game.reset()
@@ -299,7 +324,7 @@ func _run() -> void:
 	var hourly: float = _game.deaths_per_hour("woodcutter")
 	_check(is_equal_approx(hourly, 450.0), "30 woodcutters at IQ 50: 450 deaths/hour (%.1f)" % hourly)
 	_game.iq = 100.0
-	_check(is_equal_approx(_game.deaths_per_hour("woodcutter"), 112.5), "IQ 100 is 4x safer")
+	_check(is_equal_approx(_game.deaths_per_hour("woodcutter"), 225.0), "IQ 100 is 2x safer")
 	_game.iq = 50.0
 	var before_deaths: int = _game.run_deaths
 	_sim(120.0)
@@ -329,14 +354,18 @@ func _run() -> void:
 	_game.unlocked["stone"] = true
 	_game.unlocked["clay"] = true
 	_game.conquered["ugs_tribe"] = true
-	_game.run_deaths = 100
-	_check(_game.legacy_gain() == 1 + 2 + 3 + 5, "legacy from eras, conquest and deaths (%d)" % _game.legacy_gain())
+	_check(_game.legacy_gain() == 1, "early ages give no legacy, a conquest gives 1 (%d)" % _game.legacy_gain())
+	_game.unlocked["copper"] = true
+	_game.run_deaths = 2500
+	_check(_game.legacy_gain() == 1 + 1 + 10, "legacy from eras, conquest and deaths (%d)" % _game.legacy_gain())
 	_game.items = {"lucky_pebble": 1}
-	_check(_game.rebirth() == 11 and _game.legacy == 11 and _game.runs == 1, "rebirth pays out")
+	_check(_game.rebirth() == 12 and _game.legacy == 12 and _game.runs == 1, "rebirth pays out")
 	_check(not _game.is_unlocked("stone") and _game.items.is_empty() and _game.conquered.is_empty(), "rebirth resets the run")
-	_check(_game.buy_prestige("ancestral_wisdom") and _game.legacy == 10, "buy Ancestral Wisdom for 1")
-	_check(_game.prestige_cost("ancestral_wisdom") == 2, "next level costs 2")
-	_check(_game.buy_prestige("heirloom") and _game.legacy == 5, "buy Heirloom for 5")
+	_check(_game.buy_prestige("ancestral_wisdom") and _game.legacy == 9, "buy Ancestral Wisdom for 3")
+	_check(_game.prestige_cost("ancestral_wisdom") == 9, "next level costs 9")
+	_check(not _game.buy_prestige("heirloom"), "Heirloom costs 15")
+	_game.legacy += 11
+	_check(_game.buy_prestige("heirloom") and _game.legacy == 5, "buy Heirloom for 15")
 	_game.new_run()
 	_check(_game.iq == 60.0 and _game.iq_cap() == 70.0, "Ancestral Wisdom raises starting IQ and cap")
 	_check(_game.total_items() == 1, "Heirloom starts the run with a relic")

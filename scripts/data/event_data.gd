@@ -3,7 +3,12 @@ extends RefCounted
 
 const MIN_GAP := 90.0
 const MAX_GAP := 180.0
-const MAX_ACTIVE := 3
+const MAX_ACTIVE := 4
+# Each age: the gap between events shrinks (gap / (1 + this * age)) and disasters hit harder.
+const GAP_SHRINK_PER_ERA := 0.12
+const SEVERITY_PER_ERA := 0.25
+# A "destroy": n disaster also wrecks n * this share of all your buildings, if that's more.
+const DESTROY_SHARE := 0.01
 
 # Random events, rolled every MIN_GAP..MAX_GAP seconds while the game is open.
 #   requires:  resource that must be unlocked (the age it can happen in)
@@ -87,6 +92,47 @@ const EVENTS := [
 		"when": {"min_pop": 30},
 		"desc": "Money is worthless. Buildings cost twice as much.",
 		"effects": [{"key": "build_cost", "mult": 2.0}, {"key": "morale", "add": -5}]},
+	{"id": "mine_collapse", "name": "Mine Collapse", "good": false, "requires": "coal", "weight": 2.5, "duration": 300,
+		"when": {"mine": true},
+		"desc": "A shaft caves in on the miners. That mine produces 90% less until it's dug out.",
+		"start": {"kill": 0.06},
+		"effects": [{"key": "job:$target", "mult": 0.1}, {"key": "morale", "add": -10}],
+		"fix": {"label": "Dig Them Out", "pay": {"$target": 0.4}}},
+	{"id": "smog", "name": "Killer Smog", "good": false, "requires": "coal", "weight": 2.5, "duration": 300,
+		"when": {"min_pop": 30},
+		"desc": "Black smoke chokes the city. Health falls and people grow old fast.",
+		"effects": [{"key": "health", "add": -30}, {"key": "lifespan", "mult": 0.6}, {"key": "growth", "mult": 0.5}],
+		"fix": {"label": "Shut the Furnaces", "pay": {"coal": 0.5}}},
+	{"id": "factory_fire", "name": "Factory Fire", "good": false, "requires": "steel", "weight": 2.0, "duration": 0,
+		"when": {"min_pop": 30},
+		"desc": "A spark in the wrong place. The district burns.",
+		"start": {"destroy": 4, "kill": 0.06, "lose": {"steel": 0.3, "oil": 0.3}}},
+	{"id": "pandemic", "name": "Pandemic", "good": false, "requires": "electricity", "weight": 3.0, "duration": 300,
+		"when": {"min_pop": 50},
+		"desc": "A new disease rides the trains everywhere at once.",
+		"start": {"kill": 0.08},
+		"effects": [{"key": "health", "add": -45}, {"key": "job:all", "mult": 0.5}, {"key": "growth", "mult": 0.3}],
+		"fix": {"label": "Lockdown", "pay": {"top": 0.3, "food": 0.3}}},
+	{"id": "blackout", "name": "Grid Collapse", "good": false, "requires": "electricity", "weight": 2.0, "duration": 0,
+		"when": {"min_pop": 50},
+		"desc": "The whole grid fails. Hospitals go dark.",
+		"start": {"lose": {"electricity": 0.9}, "kill": 0.04}},
+	{"id": "meltdown", "name": "Reactor Meltdown", "good": false, "requires": "uranium", "weight": 2.0, "duration": 600,
+		"when": {"min_pop": 80},
+		"desc": "The core melts. A whole region becomes poison for years.",
+		"start": {"kill": 0.15, "destroy": 6, "lose": {"uranium": 0.5}},
+		"effects": [{"key": "health", "add": -40}, {"key": "lifespan", "mult": 0.5}, {"key": "growth", "mult": 0.3}],
+		"fix": {"label": "Entomb the Reactor", "pay": {"uranium": 0.5, "steel": 0.5}}},
+	{"id": "containment_breach", "name": "Containment Breach", "good": false, "requires": "antimatter", "weight": 2.0, "duration": 0,
+		"when": {"min_pop": 100},
+		"desc": "The antimatter touches the matter.",
+		"start": {"kill": 0.2, "destroy": 10, "lose": {"antimatter": 0.6}}},
+	{"id": "void_rift", "name": "Void Rift", "good": false, "requires": "dark_matter", "weight": 2.0, "duration": 300,
+		"when": {"min_pop": 100},
+		"desc": "Reality tears. People walk into it and don't come back.",
+		"start": {"kill": 0.12},
+		"effects": [{"key": "morale", "add": -30}, {"key": "job:all", "mult": 0.4}, {"key": "lifespan", "mult": 0.5}],
+		"fix": {"label": "Seal the Rift", "pay": {"dark_matter": 0.5}}},
 	{"id": "exhaustion", "name": "Mine Exhausted", "good": false, "requires": "copper", "weight": 2.0, "duration": 600,
 		"when": {"mine": true},
 		"desc": "The seam is running dry. That mine produces 75% less for 10 minutes unless you dig a new shaft.",
@@ -120,7 +166,7 @@ const EVENTS := [
 ]
 
 # Jobs that can have their mine exhausted.
-const MINE_JOBS := ["quarrier", "clay_digger", "copper_miner", "iron_miner", "coal_miner", "oil_driller", "uranium_miner"]
+const MINE_JOBS: Array = ["quarrier", "clay_digger", "copper_miner", "iron_miner", "coal_miner", "oil_driller", "uranium_miner"]
 
 
 static func find(id: String) -> Dictionary:

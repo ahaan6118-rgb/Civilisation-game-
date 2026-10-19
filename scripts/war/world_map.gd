@@ -160,10 +160,17 @@ func _on_map_input(event: InputEvent) -> void:
 				return
 
 
-static func difficulty(target: Dictionary) -> String:
+static func enemy_strength(target: Dictionary, defensive := false) -> float:
 	var tier: Dictionary = WarData.TIERS[target["tier"]]
-	var enemy: float = (InvasionMap.BASE_TROOPS + 29.0 * InvasionMap.TROOPS_PER_TILE) * target["power"] * tier["strength"] * InvasionMap.ENEMY_START_FRACTION
-	var ratio: float = enemy / maxf(1.0, Game.army_size())
+	var total := 0.0
+	for id in WarData.coalition(target["id"], Game.conquered, defensive):
+		var t := WarData.find_target(id)
+		total += (InvasionMap.BASE_TROOPS + PI * pow(InvasionMap.ENEMY_SPAWN_RADIUS, 2) * InvasionMap.TROOPS_PER_TILE) * t["power"] * tier["strength"] * InvasionMap.ENEMY_START_FRACTION
+	return total
+
+
+static func difficulty(target: Dictionary) -> String:
+	var ratio: float = enemy_strength(target) / maxf(1.0, Game.army_size())
 	if ratio < 0.5:
 		return "Easy"
 	if ratio < 1.0:
@@ -200,6 +207,12 @@ func _refresh_info() -> void:
 		_add_text("Conquered. It's yours.")
 		return
 	_add_text("Difficulty: %s" % difficulty(t))
+	var gang: PackedStringArray = []
+	for id in WarData.coalition(_selected, Game.conquered, false):
+		if id != _selected:
+			gang.append(WarData.find_target(id)["name"])
+	if not gang.is_empty():
+		_add_text("Their neighbours will gang up on you: " + ", ".join(gang) + ". Everyone else watches and joins in if you look weak.")
 	_add_text("Win: loot, +10% production and a stronger army for this run.")
 	_declare.visible = true
 	var cost := Game.war_cost()
