@@ -1,5 +1,7 @@
 # Plays the economy automatically and prints when each era unlocks.
 # Run: godot --headless --path . -s tools/balance_bot.gd -- [hours=40] [seed=1] [noevents|events] [stop_at resource]
+#      [load snapshot.json or -] [save snapshot.json when stop_at is reached]
+# Snapshots let a tuner replay one age instead of the whole game.
 extends SceneTree
 
 const STEP := 1.0
@@ -10,6 +12,8 @@ var hours := 40.0
 var _snapshots := {}
 var _events := true
 var _stop_at := ""
+var _load_path := ""
+var _save_path := ""
 
 
 func _initialize() -> void:
@@ -18,6 +22,8 @@ func _initialize() -> void:
 		hours = float(args[0])
 	_events = not (args.size() > 2 and args[2] == "noevents")
 	_stop_at = args[3] if args.size() > 3 else ""
+	_load_path = args[4] if args.size() > 4 and args[4] != "-" else ""
+	_save_path = args[5] if args.size() > 5 else ""
 	_run.call_deferred(int(args[1]) if args.size() > 1 else 1)
 
 
@@ -31,6 +37,12 @@ func _run(seed_value: int) -> void:
 	var t := 0.0
 	var think := 0.0
 	var unlocked_at := {}
+	if _load_path != "":
+		game.from_dict(JSON.parse_string(FileAccess.get_file_as_string(_load_path)))
+		# Ages already reached count from the snapshot, so the next one is timed from here.
+		for r in GameData.RESOURCES:
+			if game.is_unlocked(r["id"]):
+				unlocked_at[r["id"]] = 0.0
 	while t < hours * 3600.0:
 		game.simulate(STEP, false)
 		# An active player clicks about once a second, which is what holds decay back.
@@ -50,6 +62,8 @@ func _run(seed_value: int) -> void:
 		if game.is_unlocked("dark_matter") and t - unlocked_at["dark_matter"] > 600.0:
 			break
 		if _stop_at != "" and game.is_unlocked(_stop_at):
+			if _save_path != "":
+				FileAccess.open(_save_path, FileAccess.WRITE).store_string(JSON.stringify(game.to_dict()))
 			break
 	_report(unlocked_at, t)
 	quit()
