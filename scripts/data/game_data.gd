@@ -48,9 +48,9 @@ const TECHS := [
 		"desc": "Purify sand into chips. Unlocks Silicon."},
 	{"id": "nuclear_fission", "name": "Nuclear Fission", "requires": "semiconductors", "unlocks": "uranium", "cost": {"silicon": 3.39e+19},
 		"desc": "Split the atom. Unlocks Uranium."},
-	{"id": "particle_physics", "name": "Particle Physics", "requires": "nuclear_fission", "unlocks": "antimatter", "cost": {"uranium": 9.77e+21},
+	{"id": "particle_physics", "name": "Particle Physics", "requires": "nuclear_fission", "unlocks": "antimatter", "cost": {"uranium": 3.75e+19},
 		"desc": "Capture antiparticles. Unlocks Antimatter."},
-	{"id": "void_theory", "name": "Void Theory", "requires": "particle_physics", "unlocks": "dark_matter", "cost": {"antimatter": 1.32e+23},
+	{"id": "void_theory", "name": "Void Theory", "requires": "particle_physics", "unlocks": "dark_matter", "cost": {"antimatter": 6.98e+20},
 		"desc": "Harvest the unseen. Unlocks Dark Matter."},
 ]
 
