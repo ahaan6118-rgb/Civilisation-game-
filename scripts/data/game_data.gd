@@ -13,10 +13,10 @@ const RESOURCES := [
 	{"id": "coal", "name": "Coal"},
 	{"id": "steel", "name": "Steel"},
 	{"id": "oil", "name": "Oil"},
-	{"id": "electricity", "name": "Electricity", "spoil": 0.0002},
+	{"id": "electricity", "name": "Electricity", "spoil": 0.00005},
 	{"id": "silicon", "name": "Silicon"},
-	{"id": "uranium", "name": "Uranium", "spoil": 0.0002},
-	{"id": "antimatter", "name": "Antimatter", "spoil": 0.0001},
+	{"id": "uranium", "name": "Uranium", "spoil": 0.00005},
+	{"id": "antimatter", "name": "Antimatter", "spoil": 0.00005},
 	{"id": "dark_matter", "name": "Dark Matter"},
 ]
 
