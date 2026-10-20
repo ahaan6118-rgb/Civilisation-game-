@@ -7,6 +7,16 @@ An early playtest build. Grow a tribe from wood and food up the ages, try to kee
 - **Windows:** `CivilisationIdle-windows.zip`. Unzip and run `CivilisationIdle.exe`. If SmartScreen warns you, click **More info** then **Run anyway**.
 - **Linux:** `CivilisationIdle-linux.zip`. Unzip and run `CivilisationIdle.x86_64`.
 
+### New in 0.3.1
+- **Decay (inspired by the Kaizo Cookies mod, at 75% strength).** Everything your workers make slowly decays, and decays faster the lower it gets and the further your civilisation has come. Click the big button to hold it back. Discoveries fully purify it, while upgrades and blessings purify part of it. If you leave it alone, it builds momentum. Temples, laws, government and the new **Ancient Discipline** Legacy upgrade slow it down. Gathering food isn't affected.
+- **Golden Omens** appear under the click button every few minutes. Click one within 15 seconds to purify decay and get a minute of production.
+- **Harsher survival.** Food rots 3x faster, accidents are more common, and births slow as your homes fill up. Your town settles where deaths match births, so you're always fighting to grow.
+- **Every age retuned** for the new rules. A perfect bot that clicks every second takes about a day of play to reach Dark Matter with disasters on.
+- Disasters and event fixes can't wipe out more than a few minutes of your production of a resource, so saving up for big discoveries can't be erased.
+- Electricity, Uranium and Antimatter spoil more slowly, so their discoveries are reachable.
+- Legacy from deaths can't be farmed anymore.
+- Fixed tribes getting stuck at one person forever.
+
 ### New in 0.3.0
 - **Genuinely brutal.** Everyone dies of old age now, and births only grow with the square root of your population, so deaths catch up fast. Keep health up or your people die young. The Population panel shows births against old-age deaths.
 - **IQ fades** unless Elders keep teaching, helps less than before, and every age makes work more dangerous.
