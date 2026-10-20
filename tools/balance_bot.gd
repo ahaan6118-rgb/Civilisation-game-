@@ -101,9 +101,10 @@ func _think() -> void:
 # this think, and never more than SAVINGS_ITEM_LIMIT of the discovery's price per purchase. Otherwise
 # rebuying what disasters wreck is a treadmill that eats the savings forever.
 const SAVINGS_ITEM_LIMIT := 0.02
+const SAVINGS_HOUSING_LIMIT := 0.15
 
 
-func _cheap(cost: Dictionary, share: float) -> bool:
+func _cheap(cost: Dictionary, share: float, item_limit := SAVINGS_ITEM_LIMIT) -> bool:
 	var next := _next_tech()
 	for res in cost:
 		var have: float = game.amounts.get(res, 0.0)
@@ -111,7 +112,7 @@ func _cheap(cost: Dictionary, share: float) -> bool:
 			return false
 		if next.is_empty() or not next["cost"].has(res):
 			continue
-		if have - cost[res] < _budget_base.get(res, have) * (1.0 - share) or cost[res] > next["cost"][res] * SAVINGS_ITEM_LIMIT:
+		if have - cost[res] < _budget_base.get(res, have) * (1.0 - share) or cost[res] > next["cost"][res] * item_limit:
 			return false
 	return true
 
@@ -139,7 +140,12 @@ func _buy_things() -> void:
 					useful = true
 				if e["key"] == "iq_cap" and game.iq >= game.iq_cap() - 1.0 and game.buildings.get(b["id"], 0) < 5:
 					useful = true
-			if useful and _cheap(game.building_cost(b["id"]), 0.3) and game.buy_building(b["id"]):
+			var housing := false
+			for e in b["effects"]:
+				housing = housing or e["key"] == "pop_cap"
+			# Homes come first: losing them to disasters kills everyone left without one.
+			var limit := SAVINGS_HOUSING_LIMIT if housing else SAVINGS_ITEM_LIMIT
+			if useful and _cheap(game.building_cost(b["id"]), 0.5 if housing else 0.3, limit) and game.buy_building(b["id"]):
 				bought = true
 
 
@@ -184,6 +190,10 @@ func _assign_jobs() -> void:
 	var main := _job_for(_target_resource())
 	var focus := int(free * 0.6)
 	_staff(plan, main, focus)
+	# Keep a few people on every crafting job (bronze, steel, chips...) so their buildings stay buildable.
+	for job in GameData.JOBS:
+		if game.job_available(job) and job.get("consumes", {}).size() > 0 and job["id"] != main.get("id", ""):
+			_staff(plan, job, maxi(1, int(free * 0.02)))
 	var others: Array = []
 	for job in GameData.JOBS:
 		if game.job_available(job) and not job["id"] in ["gatherer", "warrior", "elder"] and not job.get("consumes", {}).size() > 0:
@@ -262,4 +272,4 @@ func _report(unlocked_at: Dictionary, t: float) -> void:
 		print("  jobs: " + ", ".join(staffed))
 	print("simulated %s, population %d, items %d, upgrades %d, IQ %.0f, morale %.0f, health %.0f, deaths %d, legacy if reborn %d" % [
 		NumFormat.duration(t), game.population, game.total_items(), game.upgrades.size(), game.iq, game.morale, game.health, game.run_deaths, game.legacy_gain()])
-	print("decay x%.3f, rate %.4f/s, momentum %.2f" % [game.decay, game.decay_rate(), game.decay_momentum])
+	print("decay x%.3f, rate %.4f/s, momentum %.2f, homes for %d" % [game.decay, game.decay_rate(), game.decay_momentum, game.pop_cap()])

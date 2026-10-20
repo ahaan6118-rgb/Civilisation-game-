@@ -8,7 +8,7 @@ const MAX_ACTIVE := 4
 const GAP_SHRINK_PER_ERA := 0.06
 const SEVERITY_PER_ERA := 0.12
 # A "destroy": n disaster also wrecks n * this share of all your buildings, if that's more.
-const DESTROY_SHARE := 0.005
+const DESTROY_SHARE := 0.003
 # Stockpile losses and fix prices are capped at this many seconds of your production of that resource.
 const LOSS_CAP_SECONDS := 600.0
 const FIX_CAP_SECONDS := 300.0
