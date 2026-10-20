@@ -550,7 +550,8 @@ func start_event(id: String) -> void:
 	var notes: PackedStringArray = []
 	for res in start.get("lose", {}):
 		if amounts.has(res):
-			amounts[res] *= 1.0 - minf(0.95, start["lose"][res] * defense)
+			var lost: float = amounts[res] * minf(0.95, start["lose"][res] * defense)
+			amounts[res] -= _cap_to_production(res, lost, EventData.LOSS_CAP_SECONDS)
 	# "destroy" is a minimum; big cities lose a share of everything they built.
 	var n_destroy := int(start.get("destroy", 0))
 	if n_destroy > 0:
@@ -633,8 +634,18 @@ func fix_cost(ev: Dictionary) -> Dictionary:
 			res = _biggest_stockpile()
 		elif key == "$target":
 			res = GameData.find("job", ev["target"])["produces"].keys()[0]
-		cost[res] = maxf(25.0, ceilf(amounts.get(res, 0.0) * fix["pay"][key]))
+		var price: float = _cap_to_production(res, amounts.get(res, 0.0) * fix["pay"][key], EventData.FIX_CAP_SECONDS)
+		cost[res] = maxf(25.0, ceilf(price))
 	return cost
+
+
+# Disasters and fixes take a share of a stockpile, but never more than `seconds` of what you make of it
+# (or 5% of the stockpile, if that's more). Otherwise saving up for a big discovery is a treadmill that
+# never ends. Food is exempt: it rots anyway.
+func _cap_to_production(res: String, amount: float, seconds: float) -> float:
+	if res == "food":
+		return amount
+	return minf(amount, maxf(production_per_second(res) * seconds, amounts.get(res, 0.0) * 0.05))
 
 
 func _biggest_stockpile() -> String:

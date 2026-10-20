@@ -468,7 +468,12 @@ func _run() -> void:
 	_game.amounts["stone"] = 1000.0
 	_game.amounts["clay"] = 1000.0
 	var drought_cost: Dictionary = _game.fix_cost(_game.events[0])
-	_check(drought_cost.get("stone", 0.0) == 300.0, "fix costs a share of current stock")
+	_check(drought_cost.get("stone", 0.0) == 50.0, "with nothing being made, a fix costs only 5%% of stock (%.0f)" % drought_cost.get("stone", 0.0))
+	_game.population = 20
+	_game.assign_job("quarrier", 10)
+	drought_cost = _game.fix_cost(_game.events[0])
+	_check(drought_cost.get("stone", 0.0) == 300.0, "fix costs a share of current stock (%.0f)" % drought_cost.get("stone", 0.0))
+	_game.assign_job("quarrier", -10)
 	_check(_game.fix_event(0) and not _game.has_event("drought"), "Dig Wells ends the drought")
 	_game.start_event("locusts")
 	_game.simulate(61.0, false)

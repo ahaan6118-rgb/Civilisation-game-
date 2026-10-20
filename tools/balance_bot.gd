@@ -14,6 +14,8 @@ var _events := true
 var _stop_at := ""
 var _load_path := ""
 var _save_path := ""
+# Stock of each resource at the start of a think; spending is measured against it.
+var _budget_base := {}
 
 
 func _initialize() -> void:
@@ -79,6 +81,7 @@ func _click_a_bit() -> void:
 
 func _think() -> void:
 	game.click_omen()
+	_budget_base = game.amounts.duplicate()
 	for t in GameData.TECHS:
 		if game.tech_available(t) and game.research(t["id"]):
 			break
@@ -94,14 +97,21 @@ func _think() -> void:
 				break
 
 
-# Spend at most `share` of each resource so research still gets saved up for.
+# Savings for the next discovery are only touched for small things: at most `share` of what's on hand
+# this think, and never more than SAVINGS_ITEM_LIMIT of the discovery's price per purchase. Otherwise
+# rebuying what disasters wreck is a treadmill that eats the savings forever.
+const SAVINGS_ITEM_LIMIT := 0.02
+
+
 func _cheap(cost: Dictionary, share: float) -> bool:
 	var next := _next_tech()
 	for res in cost:
 		var have: float = game.amounts.get(res, 0.0)
 		if have < cost[res]:
 			return false
-		if not next.is_empty() and next["cost"].has(res) and cost[res] > have * share:
+		if next.is_empty() or not next["cost"].has(res):
+			continue
+		if have - cost[res] < _budget_base.get(res, have) * (1.0 - share) or cost[res] > next["cost"][res] * SAVINGS_ITEM_LIMIT:
 			return false
 	return true
 
